@@ -93,3 +93,40 @@ describe("POST /api/analyze", () => {
     expect(j.source).toBe("deterministic-fallback"); expect(BlueprintSchema.parse(j.blueprint).supported).toBe(true);
   });
 });
+
+describe("POST /api/pdf unknown operation", () => {
+  it("fails closed with 400 instead of silently applying another operation", async () => {
+    const fd = new FormData(); fd.set("op", "bogus-op"); fd.append("files", await makePdf(1));
+    expect((await pdfPOST(pdfReq(fd))).status).toBe(400);
+  });
+});
+
+import { analyzeWithModel } from "@/lib/model";
+function repoFixture(fullName: string) {
+  return { fullName, description: "A library", stars: 1, forks: 0, language: "TypeScript", languages: ["TypeScript"], license: "MIT", defaultBranch: "main", sha: "abc123", htmlUrl: "https://github.com/x/y", topics: [], readme: "# lib\n- Does things", updatedAt: "", openIssues: 0 };
+}
+describe("Muse integration (Meta API, network mocked)", () => {
+  afterEach(() => { vi.unstubAllGlobals(); delete process.env.MODEL_API_KEY; delete process.env.META_API_KEY; });
+  it("calls muse-wonder-1.0 at api.meta.ai/v1 with server key and returns Zod-valid blueprint + cached tokens", async () => {
+    process.env.MODEL_API_KEY = "test-key-not-real";
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ purpose: "Do PDFs", summary: "s", supported: true }) } }], usage: { prompt_tokens_details: { cached_tokens: 42 } } }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { blueprint, source, cachedTokens } = await analyzeWithModel(repoFixture("Hopding/pdf-lib-mock-a"));
+    expect(source).toBe("muse-wonder-1.0"); expect(blueprint.purpose).toBe("Do PDFs"); expect(cachedTokens).toBe(42);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string>; body: string }];
+    expect(url).toBe("https://api.meta.ai/v1/chat/completions");
+    expect(init.headers.Authorization).toBe("Bearer test-key-not-real");
+    const body = JSON.parse(init.body); expect(body.model).toBe("muse-wonder-1.0"); expect(body.prompt_cache_key).toBeTruthy(); expect(body.messages[0].role).toBe("system");
+  });
+  it("falls back deterministically (never throws) when the model returns invalid JSON", async () => {
+    process.env.MODEL_API_KEY = "test-key-not-real";
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: "not json" } }] }) })));
+    const { source } = await analyzeWithModel(repoFixture("Hopding/pdf-lib-mock-b"));
+    expect(source).toBe("deterministic-fallback");
+  });
+  it("uses deterministic fallback with no key and makes zero model calls", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const { source } = await analyzeWithModel(repoFixture("Hopding/pdf-lib-mock-c"));
+    expect(source).toBe("deterministic-fallback"); expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

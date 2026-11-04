@@ -14,10 +14,12 @@ Paste any public GitHub URL → AI blueprint + interactive capability graph → 
 - [x] M8 Workspace: localStorage blueprint library, launch supported apps; unsupported repos show honest plan, never fake deploy.
 
 ## Phase 4 — Verification (done)
-- [x] Tests: `npm test` — 12 Vitest tests (GitHub/analyze/PDF routes, permissions, schemas). PDF tests use real pdf-lib docs; network mocked at fetch boundary.
+- [x] Tests: `npm test` — 16 Vitest tests (GitHub/analyze/PDF routes, permissions, schemas, Meta API wiring mocked at fetch boundary). PDF tests use real pdf-lib docs; network mocked at fetch boundary.
 - [x] Lint clean (`npm run lint`, ESLint flat config), typecheck clean, production build passes.
 - [x] Runtime verified: all 5 pages 200, live GitHub data, all 5 PDF ops return valid PDFs, error paths return 400.
 - [ ] Headless-browser UI pass: no Chromium in this sandbox — pages verified over HTTP only.
+- [x] Journey re-verified live: GitHub ingestion (pdf-lib 8,667 stars), analyze for supported + unsupported repos, all PDF ops, invalid URL 400 / missing repo 502, corrupt PDF 422, unknown PDF op 400 (fail closed).
+- [x] Muse wiring verified by mocked-fetch tests (endpoint, model, Bearer key, prompt_cache_key, Zod parse, cached-token passthrough, invalid-response fallback). Live AI call NOT verified — no MODEL_API_KEY in this environment; with an invalid key the app degrades to the labeled deterministic fallback with HTTP 200.
 
 ## Security
 No arbitrary repo execution. Only curated adapters. Explicit file pickers only. Size limits. Keys server-side only.

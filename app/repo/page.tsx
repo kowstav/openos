@@ -1,11 +1,11 @@
 "use client";
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 const Graph = dynamic(() => import("@/components/CapabilityGraph"), { ssr: false });
 function Inner() {
-  const sp = useSearchParams(); const url = sp.get("url") || "";
+  const sp = useSearchParams(); const router = useRouter(); const url = sp.get("url") || "";
   const [data, setData] = useState<{ repo: { fullName: string; stars: number; forks: number; language: string; license: string }; blueprint: import("@/lib/schemas").Blueprint; source: string; cachedTokens?: number } | null>(null); const [err, setErr] = useState(""); const [want, setWant] = useState("");
   useEffect(() => { if (!url) return; fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) }).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error || "Analysis failed"); setData(j); }).catch((e) => setErr(String(e.message))); }, [url]);
   if (err) return <p role="alert" className="py-16 text-red-300">{err} <Link className="underline" href="/">← Back</Link></p>;
@@ -32,7 +32,7 @@ function Inner() {
       <p className="mt-1 text-sm text-zinc-400">{supported ? "This library has a vetted OpenOS adapter. Describe what you need, then launch it." : "No vetted adapter yet. OpenOS will draft an honest implementation plan — it will not pretend to deploy untested code."}</p>
       <textarea value={want} onChange={(e) => setWant(e.target.value)} placeholder="e.g. Merge invoices and stamp each with our company name" aria-label="Describe your app" className="mt-3 w-full rounded-lg border border-white/15 bg-white/5 p-3 text-sm outline-none focus:border-[#e8ff47]" rows={3} />
       <div className="mt-3 flex flex-wrap gap-2">
-        {supported ? <Link href={studio} className="rounded-lg bg-[#e8ff47] px-5 py-2.5 font-semibold text-black">Launch app →</Link> : <button onClick={() => { const plan = { title: repo.fullName, want, url, at: Date.now() }; const old = JSON.parse(localStorage.getItem("openos-blueprints") || "[]"); localStorage.setItem("openos-blueprints", JSON.stringify([plan, ...old])); alert("Saved to My Apps as an implementation plan (not deployed)."); }} className="rounded-lg border border-[#e8ff47] px-5 py-2.5 font-semibold text-[#e8ff47]">Save implementation plan</button>}
+        {supported ? <button onClick={() => { const item = { title: repo.fullName, want, url, at: Date.now() }; try { const old = JSON.parse(localStorage.getItem("openos-blueprints") || "[]"); localStorage.setItem("openos-blueprints", JSON.stringify([item, ...old])); } catch {} router.push(studio); }} className="rounded-lg bg-[#e8ff47] px-5 py-2.5 font-semibold text-black">Launch app →</button> : <button onClick={() => { const plan = { title: repo.fullName, want, url, at: Date.now() }; const old = JSON.parse(localStorage.getItem("openos-blueprints") || "[]"); localStorage.setItem("openos-blueprints", JSON.stringify([plan, ...old])); alert("Saved to My Apps as an implementation plan (not deployed)."); }} className="rounded-lg border border-[#e8ff47] px-5 py-2.5 font-semibold text-[#e8ff47]">Save implementation plan</button>}
         <button onClick={() => { const item = { title: repo.fullName, want, url, at: Date.now() }; const old = JSON.parse(localStorage.getItem("openos-blueprints") || "[]"); localStorage.setItem("openos-blueprints", JSON.stringify([item, ...old])); alert("Saved to My Apps."); }} className="rounded-lg border border-white/20 px-5 py-2.5 text-sm">Save blueprint</button>
       </div>
     </section>

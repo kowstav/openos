@@ -5,6 +5,7 @@ const MAX = 15 * 1024 * 1024;
 export async function POST(req: NextRequest) {
   const form = await req.formData();
   const op = String(form.get("op") || "merge");
+  if (!["merge", "split", "rotate", "watermark", "metadata"].includes(op)) return NextResponse.json({ error: `Unknown operation: ${op}` }, { status: 400 });
   const files = form.getAll("files").filter((f): f is File => f instanceof File);
   if (!files.length) return NextResponse.json({ error: "No files" }, { status: 400 });
   for (const f of files) { if (f.size > MAX) return NextResponse.json({ error: "File over 15MB" }, { status: 413 }); if (!/pdf/i.test(f.type) && !f.name.endsWith(".pdf")) return NextResponse.json({ error: "Only PDF files" }, { status: 415 }); }
