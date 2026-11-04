@@ -30,7 +30,7 @@ export async function analyzeWithModel(repo: Awaited<ReturnType<typeof import(".
   } catch { return { blueprint: deterministic(repo), source: "deterministic-fallback" }; }
 }
 function deterministic(repo: Awaited<ReturnType<typeof import("./github").fetchRepo>>): Blueprint {
-  const supported = /pdf-lib|tesseract/i.test(repo.fullName);
+  const supported = /pdf-lib|tesseract|rembg/i.test(repo.fullName);
   const caps = repo.readme.split("\n").filter((l) => /^[-*] /.test(l)).slice(0, 6).map((l) => ({ name: l.replace(/^[-*] /, "").slice(0, 60), description: "From README" }));
   return {
     purpose: repo.description || "See README summary below.", summary: repo.readme.replace(/[#>*`]/g, "").slice(0, 600) || repo.description,
