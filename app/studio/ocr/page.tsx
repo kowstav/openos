@@ -7,7 +7,7 @@ export default function Page() {
     e.preventDefault(); setBusy(true); setErr(""); setText(""); setProg(0);
     const file = new FormData(e.currentTarget).get("image") as File;
     if (!file) { setErr("Choose an image first."); setBusy(false); return; }
-    try { const T = (await import("tesseract.js")).default; const r = await T.recognize(file, "eng", { logger: (m: any) => { if (m.status === "recognizing text") setProg(Math.round(m.progress * 100)); } }); setText(r.data.text || "(no text found)"); }
+    try { const T = (await import("tesseract.js")).default; const r = await T.recognize(file, "eng", { logger: (m: { status: string; progress: number }) => { if (m.status === "recognizing text") setProg(Math.round(m.progress * 100)); } }); setText(r.data.text || "(no text found)"); }
     catch { setErr("OCR failed — try a clearer image."); } finally { setBusy(false); }
   }
   return (<div className="py-10"><Link href="/" className="text-sm text-zinc-400">← Marketplace</Link><h1 className="font-display mt-4 text-4xl">OCR Reader</h1><p className="mt-2 max-w-xl text-zinc-400">Built on <strong className="text-zinc-200">Tesseract.js</strong>. Recognition runs entirely in your browser — your image is never uploaded.</p>

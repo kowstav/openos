@@ -1,10 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { policyTable, authorize, type Capability } from "@/lib/permissions";
 export default function Page() {
-  const [items, setItems] = useState<any[]>([]); const [check, setCheck] = useState("");
-  useEffect(() => { try { setItems(JSON.parse(localStorage.getItem("openos-blueprints") || "[]")); } catch {} }, []);
+  type Saved = { title: string; want?: string; at: number }; const [items] = useState<Saved[]>(() => { try { return JSON.parse(localStorage.getItem("openos-blueprints") || "[]"); } catch { return []; } }); const [check, setCheck] = useState("");
   return (<div className="py-10"><h1 className="font-display text-4xl">My Apps</h1><p className="mt-2 text-zinc-400">Launch supported apps, revisit saved blueprints and plans.</p>
   <div className="mt-6 grid gap-4 sm:grid-cols-2">
     <article className="rounded-xl border border-[#e8ff47]/40 bg-[#141416] p-5"><h3 className="font-semibold">PDF Studio · pdf-lib</h3><p className="mt-1 text-sm text-zinc-400">Merge, split, rotate, watermark PDFs.</p><Link href="/studio/pdf" className="mt-4 inline-block rounded-lg bg-[#e8ff47] px-4 py-2 text-sm font-semibold text-black">Launch →</Link></article>
