@@ -14,6 +14,6 @@ export async function loadSkill(name: SkillName): Promise<Skill> {
 export async function loadSkills(names: SkillName[]): Promise<Skill[]> { return Promise.all(names.map(loadSkill)); }
 export function skillsForStrategy(strategy: string): SkillName[] {
   const base: SkillName[] = ["repository-intelligence", "appification", "interface-design", "workflow-composer", "sandbox-security", "permission-broker", "verification", "deployment"];
-  if (strategy === "js-library" || strategy === "python-library" || strategy === "python-cli") return [...base.slice(0, 2), "environment-builder", ...base.slice(2), "failure-recovery"];
+  if (strategy === "js-library" || strategy === "js-cli" || strategy === "python-library" || strategy === "python-cli") return [...base.slice(0, 2), "environment-builder", ...base.slice(2), "failure-recovery"];
   return base;
 }

@@ -3,8 +3,10 @@
   "method": "Live POST /api/convert on the running OpenOS server; job polled to completion; sample output validated by the verification step. Same infrastructure as user submissions; neither repo appears in demo/manifests/.",
   "results": [
     { "repo": "markedjs/marked", "language": "JavaScript", "strategy": "js-library", "status": "succeeded", "sampleInput": "# Hello\n\nSome **bold** text.", "sampleOutput": "<h1>Hello</h1>\n<p>Some <strong>bold</strong> text.</p>\n", "verified": true },
-    { "repo": "un33k/python-slugify", "language": "Python", "strategy": "python-cli", "status": "succeeded", "sampleInput": "Hello OpenOS World!", "sampleOutput": "hello-openos-world", "verified": true }
+    { "repo": "un33k/python-slugify", "language": "Python", "strategy": "python-cli", "status": "succeeded", "sampleInput": "Hello OpenOS World!", "sampleOutput": "hello-openos-world", "verified": true },
+    { "repo": "uuidjs/uuid", "language": "JavaScript (CLI)", "strategy": "js-cli", "status": "succeeded", "sampleInput": "(no args)", "sampleOutput": "ead5dfdd-677d-4256-bc67-5aaae0d5fbc8 (UUIDv4 shape)", "verified": true }
   ],
-  "novelRepoSuccessRate": "2/2 measured",
+  "novelRepoSuccessRate": "3/3 measured across js-library, python-cli, and js-cli strategies",
+  "browserVerification": "2026-11-04: scripts/e2e.mjs (playwright-core + Chromium headless shell) — 9/9 checks: marketplace render, generated marked app executed in a real browser with grant consumption, and 375px mobile with zero horizontal overflow on /, /workspace, and /app/[id].",
   "notes": "Showcase conversions (demo/manifests) are tracked separately and are not counted here. Failures on other repo shapes (web apps, containers, GPU libraries) currently end as honest 'partial' plans, not silent successes."
 }

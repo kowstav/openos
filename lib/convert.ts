@@ -3,7 +3,7 @@ import { analyzeWithModel } from "./model";
 import { classify, execSpecFor } from "./classify";
 import { generateApp } from "./engine";
 import { loadSkills, skillsForStrategy, type SkillName } from "./skills";
-import { runOperation } from "./runner";
+import { activeProvider } from "./sandbox-provider";
 import { saveJob, saveApp, saveArtifacts, type Job, type JobStep } from "./store";
 import { buildArtifacts } from "./artifacts";
 const MAX_JOBS = 3; let active = 0;
@@ -35,7 +35,7 @@ async function runJob(job: Job) {
     let verified = false; let verifyDetail = "Not executable in this environment — no fake verification claimed."; let sampleOut = "";
     if (spec) {
       await step("Environment construction", "environment-builder", "running", `Isolated install of ${spec.packageName} (no secrets, scrubbed env, timeouts)…`);
-      try { const out = await runOperation(spec.kind, spec, spec.sampleInput); sampleOut = out; verified = spec.sampleCheck ? out.includes(spec.sampleCheck) : out.length > 0;
+      try { const out = await activeProvider().run(spec.kind, spec, spec.sampleInput); sampleOut = out; verified = spec.sampleCheck ? out.includes(spec.sampleCheck) : out.trim().length > 0;
         await step("Environment construction", "environment-builder", "done", `Installed ${spec.packageName} in sandbox`);
         await step("Verification", "verification", verified ? "done" : "failed", verified ? `Sample "${spec.sampleInput.slice(0, 40)}" → "${out.slice(0, 80)}" (real output validated)` : `Sample output failed validation: "${out.slice(0, 80)}"`);
         verifyDetail = verified ? "Real sample executed and output validated." : "Sample execution produced unexpected output.";

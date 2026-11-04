@@ -37,6 +37,10 @@ Paste any public GitHub URL → AI blueprint + interactive capability graph → 
 - [x] M20 Modal Sandboxes: investigated and documented with a concrete 5-step wiring plan and a `SandboxProvider` seam (`docs/modal-sandboxes.md`, `lib/sandbox-provider.ts`). Not integrated — no Modal account/token exists; local provider remains default and is labeled honestly.
 - [x] M21 Generalization measurement finalized: `demo/generalization.json` records the two live novel-repo conversions (marked JS, python-slugify Python), 2/2 succeeded, tracked separately from showcases.
 
+- [x] M22 Modal wiring: `activeProvider()` routes conversion + execution; `workers/modal_runner.py` creates one ephemeral Sandbox per run. Activation only needs credentials (`SANDBOX_PROVIDER=modal`) — without them it fails honestly as "not configured".
+- [x] M23 Third strategy verified: `js-cli` (bin-only packages) — uuidjs/uuid converted live, its bin generated a validated UUIDv4. Generalization now 3/3 across js-library, python-cli, js-cli (`demo/generalization.json`).
+- [x] M24 Browser E2E + mobile: `scripts/e2e.mjs` (`npm run test:e2e`, playwright-core + Chromium) — 9/9: marketplace, in-browser generated-app execution with grant consumption, 375px zero-overflow on home/workspace/app. Found & fixed a real 123px mobile header overflow.
+
 ## Security
 No arbitrary repo execution. Only curated adapters. Explicit file pickers only. Size limits. Keys server-side only. Unsupported: arbitrary repo code, Python/GPU repos (faster-whisper, pandoc) — analysis and honest plans only until a real isolated runtime (e.g. Modal Sandboxes) is wired. Photo Studio's AI model loads from CDN on first use; offline it falls back to solid-background removal and says so.
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApp } from "@/lib/store";
-import { runOperation } from "@/lib/runner";
+import { activeProvider } from "@/lib/sandbox-provider";
 import { checkGrant, consumeGrant } from "@/lib/broker";
 export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
@@ -13,6 +13,6 @@ export async function POST(req: NextRequest) {
   const verdict = checkGrant(String(b.grantId), { userId: String(b.userId || "demo-user"), appId: app.id, action: "execute" });
   if (!verdict.ok) return NextResponse.json({ error: verdict.reason }, { status: 403 });
   const input = String(b.input ?? ""); if (input.length > 20_000) return NextResponse.json({ error: "Input too large (20k max)" }, { status: 413 });
-  try { const output = await runOperation(app.exec.kind, app.exec, input); consumeGrant(String(b.grantId)); return NextResponse.json({ output, grant: verdict.reason }); }
+  try { const output = await activeProvider().run(app.exec.kind, app.exec, input); consumeGrant(String(b.grantId)); return NextResponse.json({ output, grant: verdict.reason, provider: activeProvider().name }); }
   catch (e) { return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 422 }); }
 }

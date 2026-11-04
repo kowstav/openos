@@ -1,6 +1,6 @@
 # Modal Sandboxes — investigation & wiring plan
 
-Status: **investigated, not yet integrated.** No Modal account, token, or billing exists in this environment, so nothing below is claimed as running. The current runtime is the hardened local runner (`lib/runner.ts`); this document is the concrete path to replace it.
+Status: **wiring implemented, activation pending credentials.** The provider seam is live: conversion and execution both route through `activeProvider()` (`lib/sandbox-provider.ts`), and `workers/modal_runner.py` implements one ephemeral Sandbox per execution. No Modal account, token, or billing exists in this environment, so the Modal path correctly refuses with a "not configured" error until `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` are set and `SANDBOX_PROVIDER=modal` is flipped. The default runtime remains the hardened local runner (`lib/runner.ts`).
 
 ## What Modal Sandboxes provide (from Modal's product documentation)
 - Programmatic, isolated containers created on demand via the Modal SDK (`modal.Sandbox.create`) from a defined Image, with per-sandbox CPU/memory limits, timeouts, and termination.

@@ -12,6 +12,7 @@ describe("repository classification (evidence-based)", () => {
     expect(classify(repoFixture({ pkg: { name: "marked", main: "lib/marked.cjs" } })).strategy).toBe("js-library");
     expect(classify(repoFixture({ files: ["pyproject.toml"], pyproject: 'name = "python-slugify"\n' })).strategy).toBe("python-library");
     expect(classify(repoFixture({ files: ["Dockerfile"] })).strategy).toBe("container");
+    expect(classify(repoFixture({ pkg: { name: "uuid", bin: { uuid: "./dist/bin/uuid" } } })).strategy).toBe("js-cli");
     expect(classify(repoFixture({})).strategy).toBe("unknown");
   });
   it("infers executable specs only for known-shape packages", () => {

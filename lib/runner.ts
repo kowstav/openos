@@ -52,6 +52,19 @@ export async function runPythonOperation(spec: { packageName: string; module: st
   if (r.code !== 0) throw new Error(`Execution failed: ${r.err.slice(-400)}`);
   return r.out;
 }
+export async function runJsCli(spec: { packageName: string; exportName: string }, input: string): Promise<string> {
+  if (!NAME_RE.test(spec.packageName) || !/^[A-Za-z0-9_-]+$/.test(spec.exportName)) throw new Error("Invalid package/bin — refused.");
+  const dir = await ensureJs(spec.packageName);
+  const bin = path.join(dir, "node_modules", ".bin", spec.exportName);
+  try { await fs.access(bin); } catch { throw new Error(`CLI bin "${spec.exportName}" not found after install — conversion cannot execute it.`); }
+  const args = input.trim() ? input.trim().split(/\s+/).slice(0, 8) : [];
+  if (args.some((a) => /[;|&$`\\]/.test(a))) throw new Error("Arguments contain shell metacharacters — refused (argv only, never a shell).");
+  const r = await run(bin, args, { cwd: dir, timeoutMs: 20_000 });
+  if (r.code !== 0) throw new Error(`CLI failed: ${(r.err || r.out).slice(-400)}`);
+  return r.out;
+}
 export async function runOperation(kind: string, spec: { packageName: string; module: string; exportName: string }, input: string) {
-  return kind === "python" ? runPythonOperation(spec, input) : runJsOperation(spec, input);
+  if (kind === "python") return runPythonOperation(spec, input);
+  if (kind === "js-cli") return runJsCli(spec, input);
+  return runJsOperation(spec, input);
 }
