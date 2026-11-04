@@ -1,4 +1,7 @@
-# OpenOS — PLAN
+# OpenOS — Milestone log
+
+> Renamed from `PLAN.md`: on case-insensitive filesystems `PLAN.md` and the 30-section master plan `plan.md` are the same file. Content is unchanged; see `plan.md` for the master plan.
+
 
 ## Vision
 Paste any public GitHub URL → AI blueprint + interactive capability graph → launch a real app built on a vetted library, no local install.

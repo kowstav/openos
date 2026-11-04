@@ -1,75 +1,111 @@
 "use client";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 const Graph = dynamic(() => import("@/components/CapabilityGraph"), { ssr: false });
-const capId = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "capability";
 import { ensureSession } from "@/components/session";
 import ToolPreview from "@/components/ToolPreview";
 import { previewFor } from "@/lib/preview";
-const SUGGESTIONS: Record<string, string[]> = {
-  "pdf-lib": ["Build me an invoice processor that merges PDFs, applies a watermark with our company name, and stamps the title", "Extract page 1 of each contract as its own PDF", "Rotate sideways scans and merge them into one document"],
-  "rembg": ["Build me a product photo editor that removes backgrounds, resizes images, and exports marketplace-ready photos on white", "Remove the background and give me a transparent PNG", "Resize product photos for Etsy at 1200px"],
-  "tesseract": ["Create a reader that extracts text from screenshots so I can search it", "Extract text from a scanned receipt"],
+type Cap = { id: string; label: string; description: string; executable: boolean };
+type GraphData = { repo: string; commitSha: string; capabilities: Cap[] };
+const EXAMPLES: Record<string, string> = {
+  "pdf-lib": "Merge my invoices in order, add our company name as a watermark, and set the document title",
+  "rembg": "Remove backgrounds, center each product on white, and resize everything for my shop",
+  "tesseract": "Extract the text from scanned receipts so I can search it",
 };
 function Inner() {
   const sp = useSearchParams(); const router = useRouter(); const url = sp.get("url") || "";
-  const [data, setData] = useState<{ repo: { fullName: string; stars: number; forks: number; language: string; license: string }; blueprint: import("@/lib/schemas").Blueprint; source: string; cachedTokens?: number } | null>(null);
-  const [err, setErr] = useState(""); const [want, setWant] = useState(""); const [selected, setSelected] = useState<string[]>([]); const [stage, setStage] = useState(-1); const [genMsg, setGenMsg] = useState("");
-  const [job, setJob] = useState<{ status: string; steps: { name: string; skill?: string; status: string; detail: string }[]; appId?: string; error?: string } | null>(null);
+  const [data, setData] = useState<{ repo: { fullName: string; stars: number; forks: number; language: string; license: string }; blueprint: import("@/lib/schemas").Blueprint; graph: GraphData; graphRevision: string; source: string } | null>(null);
+  const [err, setErr] = useState(""); const [want, setWant] = useState(""); const [appName, setAppName] = useState("");
+  const [selected, setSelected] = useState<string[]>([]); const [building, setBuilding] = useState(false); const [jobId, setJobId] = useState("");
+  const [job, setJob] = useState<{ status: string; steps: { name: string; status: string; detail: string }[]; appId?: string; error?: string } | null>(null);
+  const [genMsg, setGenMsg] = useState("");
   useEffect(() => { if (!url) return; ensureSession().then(() => fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) })).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error || "Analysis failed"); setData(j); }).catch((e) => setErr(String(e.message))); }, [url]);
-  if (err) return <p role="alert" className="py-16 text-red-300">{err} <Link className="underline" href="/">← Back</Link></p>;
-  if (!data) return <p className="py-16 text-zinc-400">Analyzing repository — fetching live GitHub data…</p>;
-  const { repo, blueprint: bp, source } = data;
-  const supported = bp.supported || /pdf-lib|tesseract|rembg/i.test(repo.fullName);
-  const key = Object.keys(SUGGESTIONS).find((k) => repo.fullName.toLowerCase().includes(k)) || "";
+  // Draft survives reloads and navigation: restore name, description, steps.
+  // Saving stays off until the restore has run, so a reload can never wipe
+  // the saved draft with the page's initial empty state.
+  const draftReady = useRef(false);
+  useEffect(() => { const t = setTimeout(() => { try { const d = JSON.parse(localStorage.getItem(`openos-draft:${url}`) || "null"); if (d) { setWant(d.want || ""); setAppName(d.appName || ""); setSelected(Array.isArray(d.selected) ? d.selected : []); } } catch { /* fresh draft */ } draftReady.current = true; }, 0); return () => clearTimeout(t); }, [url]);
+  useEffect(() => { if (!draftReady.current) return; try { localStorage.setItem(`openos-draft:${url}`, JSON.stringify({ want, appName, selected })); } catch { /* storage unavailable */ } }, [url, want, appName, selected]);
+  if (err) return <div className="py-16"><p role="alert" className="max-w-xl rounded-lg border-2 border-[#8a2f23] bg-[#fffdf6] p-5 text-[#8a2f23]">{/403|rate/i.test(err) ? "GitHub is limiting repository lookups right now. Wait a minute, then try again — your place here is saved." : err}</p><Link className="mt-4 inline-block font-semibold underline" href="/">← Back to Discover</Link></div>;
+  if (!data) return <p role="status" className="py-16 text-[#5c5747]">Looking at this repository — fetching its real files and license…</p>;
+  const { repo, blueprint: bp, graph, source } = data;
+  const caps = graph?.capabilities || [];
+  const executable = caps.filter((c) => c.executable);
+  const canBuild = executable.length > 0;
+  const exampleKey = Object.keys(EXAMPLES).find((k) => repo.fullName.toLowerCase().includes(k)) || "";
+  const studioFor = /pdf-lib/i.test(repo.fullName) ? "/studio/pdf" : /rembg/i.test(repo.fullName) ? "/studio/image" : /tesseract/i.test(repo.fullName) ? "/studio/ocr" : "";
   async function createApp() {
-    setStage(0); setGenMsg(""); setJob(null);
+    setBuilding(true); setGenMsg(""); setJob(null);
     try {
       await ensureSession();
-      const res = await fetch("/api/convert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, prompt: want, selectedCapabilities: selected }) });
+      const res = await fetch("/api/convert", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, prompt: want, selectedCapabilities: selected, workflowOrder: selected, options: { appName: appName.trim() || undefined } }) });
       const j = await res.json(); if (!res.ok) throw new Error(j.error || "Conversion failed to start");
-      const id = j.job.id;
-      for (let i = 0; i < 120; i++) {
+      const id = j.job.id; setJobId(id);
+      for (let i = 0; i < 160; i++) {
         await new Promise((r) => setTimeout(r, 1500));
-        const jr = await (await fetch(`/api/jobs/${id}`)).json(); setJob(jr.job); setStage(jr.job.steps.length);
+        const jr = await (await fetch(`/api/jobs/${id}`)).json(); setJob(jr.job);
         if (["succeeded", "partial", "failed", "cancelled"].includes(jr.job.status)) {
-          if (jr.job.appId) { setGenMsg(jr.job.status === "succeeded" ? "Built and verified. Opening your app…" : "Built with limitations — see the build log."); setTimeout(() => router.push(`/app/${jr.job.appId}`), 900); }
-          else setGenMsg(jr.job.error || "Conversion finished without a runnable app — the build log explains exactly why. Nothing was faked.");
+          if (jr.job.appId) { setGenMsg(jr.job.status === "succeeded" ? "Built and checked. Opening your app…" : "Finished with limits — the build details below explain exactly what works."); setTimeout(() => router.push(`/app/${jr.job.appId}`), 900); }
+          else setGenMsg(jr.job.error || "This could not be built into a runnable app here. The build details below give the reason.");
           break;
         }
       }
-    } catch (e) { setGenMsg(String(e instanceof Error ? e.message : e)); setStage(-1); }
+    } catch (e) { setGenMsg(String(e instanceof Error ? e.message : e)); } finally { setBuilding(false); }
   }
+  async function cancel() { if (jobId) await fetch(`/api/jobs/${jobId}`, { method: "DELETE" }).catch(() => {}); setGenMsg("Cancelling — the build will stop at its next step."); }
+  const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const move = (i: number, d: number) => setSelected((s) => { const n = [...s]; const j = i + d; if (j < 0 || j >= n.length) return s; [n[i], n[j]] = [n[j], n[i]]; return n; });
+  const labelOf = (id: string) => caps.find((c) => c.id === id)?.label || id;
   return (<div className="py-10">
-    <Link href="/" className="text-sm text-zinc-400 hover:text-white">← Marketplace</Link>
-    <div className="mt-4 flex flex-wrap items-start justify-between gap-4"><div><h1 className="font-display text-4xl">{bp.capabilities[0]?.name || bp.purpose}</h1><p className="mt-1 text-sm text-zinc-500">{repo.fullName}</p><p className="mt-2 max-w-2xl leading-relaxed text-zinc-400">{bp.purpose}</p><div className="mt-3 max-w-xl"><ToolPreview asset={previewFor(bp.capabilities.map((c) => capId(c.name)), repo.fullName)} /></div></div>
-    <div className="text-right text-sm text-zinc-400"><div>★ {repo.stars.toLocaleString()} · Forks {repo.forks.toLocaleString()}</div><div>{repo.language} · {repo.license}</div></div></div>
-    <p className="mt-3 inline-block rounded-full border border-white/15 px-3 py-1 text-xs text-zinc-300">{source === "muse-wonder-1.0" ? "✦ Analyzed by Meta Muse · muse-wonder-1.0" : "Deterministic summary (no MODEL_API_KEY configured — not AI-generated)"}{data.cachedTokens ? ` · ${data.cachedTokens} cached tokens` : ""}</p>
-    <section className="mt-8"><h2 className="mb-1 font-display text-xl">Capability map</h2><p className="mb-3 text-sm text-zinc-500">Click capabilities to shape your app. Inputs flow in, outputs flow out, locks show what the app may touch.</p><Graph bp={bp} selected={selected} onToggle={(n) => setSelected((s) => (s.includes(n) ? s.filter((x) => x !== n) : [...s, n]))} /></section>
-    <div className="mt-8 grid gap-6 md:grid-cols-2">
-      <section className="rounded-lg border border-white/10 bg-[#141416] p-5"><h3 className="font-semibold">Capabilities</h3><p className="text-xs text-zinc-500">The graph above and this keyboard-accessible list select the same capability IDs.</p><ul className="mt-3 space-y-3 text-sm">{bp.capabilities.map((c, i) => { const id = capId(c.name); return <li key={i}><button onClick={() => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))} aria-pressed={selected.includes(id)} className={`text-left ${selected.includes(id) ? "text-[#e8ff47]" : ""}`}><strong>{selected.includes(id) ? "✓ " : ""}{c.name}</strong><span className="block text-xs text-zinc-500">{id}</span><span className="block text-zinc-400">{c.description}</span></button></li>; })}</ul>
-      <h3 className="mt-5 font-semibold">Architecture</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">{bp.architecture || bp.summary}</p></section>
-      <section className="rounded-lg border border-white/10 bg-[#141416] p-5"><h3 className="font-semibold">Good for</h3><ul className="mt-2 list-disc pl-5 text-sm text-zinc-300">{(bp.applications.length ? bp.applications : ["General-purpose library — see README"]).map((a: string, i: number) => <li key={i}>{a}</li>)}</ul>
-      <h3 className="mt-5 font-semibold">Permissions & license</h3><p className="mt-2 text-sm text-zinc-400">{bp.licenseNotes}</p><ul className="mt-2 text-sm text-zinc-300">{bp.permissions.map((p: string, i: number) => <li key={i}>🔒 {p}</li>)}</ul>
-      {bp.risks?.length > 0 && <><h3 className="mt-5 font-semibold">Considerations</h3><ul className="mt-2 list-disc pl-5 text-sm text-zinc-400">{bp.risks.map((r: string, i: number) => <li key={i}>{r}</li>)}</ul></>}</section>
-    </div>
-    {bp.commercialAlternatives?.length > 0 && <section className="mt-6 rounded-lg border border-white/10 bg-[#141416] p-5"><h3 className="font-semibold">Commercial alternatives</h3><p className="text-xs text-zinc-500">Feature parity is not implied — compare before switching.</p><ul className="mt-3 space-y-2 text-sm">{bp.commercialAlternatives.map((a, i) => <li key={i}><strong>{a.name}</strong> <span className="text-xs text-zinc-500">{a.verified ? "· verified" : "· AI suggestion"}</span><span className="block text-zinc-400">{a.note}</span></li>)}</ul></section>}
-    <section className="mt-6 rounded-lg border border-[#e8ff47]/40 bg-[#141416] p-5">
-      <h3 className="font-display text-xl">Describe your app — Muse builds it</h3>
-      <p className="mt-1 text-sm text-zinc-400">{supported ? "This library has a vetted OpenOS adapter. Your words become a real workflow — try it:" : "No vetted adapter yet. OpenOS will draft an honest implementation plan — it will not pretend to deploy untested code."}</p>
-      {SUGGESTIONS[key]?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{SUGGESTIONS[key].map((s) => <button key={s} onClick={() => setWant(s)} className="rounded-full border border-white/15 px-3 py-1.5 text-left text-xs text-zinc-300 hover:border-[#e8ff47] hover:text-[#e8ff47]">{s}</button>)}</div>}
-      <label className="mt-3 block text-sm font-medium">How should your app work?<textarea value={want} onChange={(e) => setWant(e.target.value)} placeholder="e.g. Build me an invoice processor that merges PDFs and stamps each with our company name" aria-label="How should your app work?" className="mt-2 w-full rounded-md border border-white/15 bg-white/5 p-3 text-sm outline-none focus:border-[#e8ff47]" rows={3} /></label>
-      {selected.length > 0 && <div className="mt-3 text-sm"><p>Selected steps in order:</p><ol className="mt-1 space-y-1">{selected.map((s, i) => <li key={s} className="flex items-center gap-2">{i + 1}. {s}<button type="button" aria-label={`Move ${s} up`} onClick={() => { const n = [...selected]; if (i > 0) { [n[i - 1], n[i]] = [n[i], n[i - 1]]; setSelected(n); } }}>↑</button><button type="button" aria-label={`Move ${s} down`} onClick={() => { const n = [...selected]; if (i < n.length - 1) { [n[i + 1], n[i]] = [n[i], n[i + 1]]; setSelected(n); } }}>↓</button><button type="button" aria-label={`Remove ${s}`} onClick={() => setSelected(selected.filter((x) => x !== s))}>Remove</button></li>)}</ol><button type="button" onClick={() => setSelected([])} className="mt-2 underline">Undo selection</button>{selected.some((s) => s.includes("merge")) && <p className="mt-2 text-amber-200">Merging needs at least two files — the PDF workspace will ask for them before running.</p>}</div>}
-      {job && <ol className="mt-4 space-y-2 text-sm" aria-live="polite">{job.steps.map((s) => <li key={s.name} className={s.status === "failed" ? "text-red-300" : s.status === "done" ? "text-zinc-400" : "font-medium text-[#e8ff47]"}>{s.status === "done" ? "✓" : s.status === "failed" ? "✕" : s.status === "skipped" ? "—" : "◉"} <strong>{s.name}</strong>{s.skill ? <span className="text-zinc-500"> · skill: {s.skill}</span> : null}<span className="block pl-5 text-xs font-normal text-zinc-500">{s.detail}</span></li>)}{job.status === "running" && <li className="text-[#e8ff47]">◉ Muse is working…</li>}</ol>}
-      {!job && stage >= 0 && <p className="mt-4 text-sm text-[#e8ff47]">Starting conversion…</p>}
-      {genMsg && <p role="status" className="mt-3 text-sm text-amber-200">{genMsg}</p>}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={createApp} disabled={stage >= 0} className="rounded-md bg-[#e8ff47] px-5 py-2.5 font-semibold text-black disabled:opacity-50">{stage >= 0 ? "Building…" : supported ? "Create my app →" : "Save implementation plan"}</button>
-        <button onClick={async () => { await ensureSession(); const r = await fetch("/api/library", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: repo.fullName, repoUrl: url, prompt: want, capabilityIds: selected }) }); setGenMsg(r.ok ? "Saved to My Apps." : "Save failed — check you are signed in."); }} className="rounded-md border border-white/20 px-5 py-2.5 text-sm">Save blueprint</button>
+    <Link href="/" className="text-sm font-medium text-[#5c5747] hover:text-[#1c1a14]">← Discover</Link>
+    <div className="mt-5 grid items-start gap-8 lg:grid-cols-2">
+      <div><ToolPreview asset={previewFor(caps.map((c) => c.id), repo.fullName)} large />
+        <p className="mt-3 text-sm text-[#5c5747]">From <strong className="text-[#1c1a14]">{repo.fullName}</strong> · {repo.language} · {repo.license} · ★ {repo.stars.toLocaleString()}</p></div>
+      <div>
+        <h1 className="font-display text-4xl leading-tight">{caps[0]?.label ? `${caps[0].label} and more` : bp.purpose}</h1>
+        <p className="mt-3 max-w-xl leading-relaxed text-[#3d392c]">{bp.purpose}</p>
+        <p className="mt-2 text-sm text-[#5c5747]">{source === "muse-wonder-1.0" ? "Analyzed by Meta Muse from the real source at this commit." : "Summarized from the repository files (AI analysis is not configured here)."}</p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {studioFor && canBuild && <Link href={studioFor} className="rounded-md bg-[#d9e021] px-5 py-2.5 font-bold text-[#1c1a14] ring-2 ring-[#1c1a14]">Try a sample</Link>}
+          {canBuild ? <a href="#build" className="rounded-md border-2 border-[#1c1a14] bg-[#fffdf6] px-5 py-2.5 font-semibold">Create my app</a> : <a href="#requirements" className="rounded-md border-2 border-[#1c1a14] bg-[#fffdf6] px-5 py-2.5 font-semibold">View requirements</a>}
+        </div>
+        <h2 className="mt-7 text-lg font-bold">What it can do</h2>
+        <ul className="mt-2 space-y-1.5 text-sm text-[#3d392c]">{caps.slice(0, 6).map((c) => <li key={c.id}>{c.executable ? "✓" : "—"} {c.label} — <span className="text-[#5c5747]">{c.description.slice(0, 110)}</span></li>)}</ul>
       </div>
-      <p className="mt-3 text-xs text-zinc-500">Creation runs the permission gateway before launch. Blocked capabilities are reported, never silently granted.</p>
+    </div>
+    <section className="mt-10"><h2 className="font-display text-2xl">Choose what your app does</h2>
+      <p className="mt-1 text-sm text-[#5c5747]">Pick steps and put them in order. The map and the list are the same choices — use whichever you prefer.</p>
+      <div className="mt-4 grid gap-6 lg:grid-cols-2">
+        <Graph bp={{ ...bp, capabilities: caps.map((c) => ({ id: c.id, name: c.label, description: c.description })) }} selected={selected} onToggle={(id) => toggle(id)} />
+        <div className="rounded-lg border-2 border-[#1c1a14] bg-[#fffdf6] p-5"><h3 className="font-bold">Steps, in plain words</h3>
+          <ul className="mt-3 space-y-2.5">{caps.map((c) => <li key={c.id}><button onClick={() => toggle(c.id)} aria-pressed={selected.includes(c.id)} disabled={!c.executable} className={`w-full rounded-md border-2 px-3 py-2.5 text-left text-sm ${selected.includes(c.id) ? "border-[#1c1a14] bg-[#d9e021] font-bold" : "border-[#1c1a14]/25 hover:border-[#1c1a14]"} disabled:opacity-50`}><span className="block">{selected.includes(c.id) ? "✓ " : ""}{c.label}{c.executable ? "" : " (not runnable here)"}</span><span className="block text-xs font-normal text-[#5c5747]">{c.description.slice(0, 140)}</span></button></li>)}</ul>
+          {selected.length > 0 && <div className="mt-4"><p className="text-sm font-bold">Your app will run, in this order:</p>
+            <ol className="mt-2 space-y-1.5 text-sm">{selected.map((s, i) => <li key={s} className="flex flex-wrap items-center gap-2 rounded-md bg-[#f2ecdd] px-3 py-2"><span>{i + 1}. {labelOf(s)}</span><span className="ml-auto flex gap-1"><button type="button" aria-label={`Move ${labelOf(s)} up`} onClick={() => move(i, -1)} className="rounded border border-[#1c1a14]/40 px-2 py-1">↑</button><button type="button" aria-label={`Move ${labelOf(s)} down`} onClick={() => move(i, 1)} className="rounded border border-[#1c1a14]/40 px-2 py-1">↓</button><button type="button" aria-label={`Remove ${labelOf(s)}`} onClick={() => toggle(s)} className="rounded border border-[#1c1a14]/40 px-2 py-1">Remove</button></span></li>)}</ol>
+            <button type="button" onClick={() => setSelected([])} className="mt-2 text-sm underline">Clear steps</button></div>}
+        </div>
+      </div>
+    </section>
+    <section id="build" className="mt-10 max-w-3xl rounded-lg border-2 border-[#1c1a14] bg-[#fffdf6] p-6">
+      <h2 className="font-display text-2xl">Make it yours</h2>
+      {exampleKey && <p className="mt-2 text-sm text-[#5c5747]">For example: <button onClick={() => setWant(EXAMPLES[exampleKey])} className="font-medium text-[#1c1a14] underline">{EXAMPLES[exampleKey]}</button></p>}
+      <label className="mt-4 block text-sm font-bold">App name<input value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="e.g. Invoice Merger" className="mt-1.5 w-full rounded-md border-2 border-[#1c1a14]/30 bg-white px-3 py-2.5 font-normal outline-none focus:border-[#1c1a14]" /></label>
+      <label className="mt-4 block text-sm font-bold">How should your app work?<textarea value={want} onChange={(e) => setWant(e.target.value)} placeholder="Describe the job in your own words" aria-label="How should your app work?" className="mt-1.5 w-full rounded-md border-2 border-[#1c1a14]/30 bg-white p-3 text-sm font-normal outline-none focus:border-[#1c1a14]" rows={3} /></label>
+      {job && <div className="mt-4" aria-live="polite"><p className="text-sm font-bold">{job.status === "running" ? "Building your app…" : `Build ${job.status}`}</p>
+        <details className="mt-2"><summary className="cursor-pointer text-sm font-medium">Build details</summary>
+          <ol className="mt-2 space-y-1.5 text-sm">{job.steps.map((s) => <li key={s.name} className={s.status === "failed" ? "text-[#8a2f23]" : "text-[#3d392c]"}>{s.status === "done" ? "✓" : s.status === "failed" ? "✕" : "…"} <strong>{s.name}</strong><span className="block pl-4 text-xs text-[#5c5747]">{s.detail}</span></li>)}</ol></details></div>}
+      {genMsg && <p role="status" className="mt-3 rounded-md bg-[#f2ecdd] px-3 py-2 text-sm">{genMsg}</p>}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button onClick={createApp} disabled={building || (canBuild && selected.length === 0)} className="rounded-md bg-[#d9e021] px-5 py-2.5 font-bold text-[#1c1a14] ring-2 ring-[#1c1a14] disabled:opacity-50">{building ? "Building…" : canBuild ? "Create my app" : "Save the plan"}</button>
+        {building && <button onClick={cancel} className="rounded-md border-2 border-[#1c1a14] px-5 py-2.5 text-sm font-semibold">Cancel build</button>}
+        <button onClick={async () => { await ensureSession(); const r = await fetch("/api/library", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: appName || repo.fullName, repoUrl: url, prompt: want, capabilityIds: selected }) }); setGenMsg(r.ok ? "Saved to My Apps → Saved plans." : "That could not be saved. Try again."); }} className="rounded-md border-2 border-[#1c1a14]/40 px-5 py-2.5 text-sm font-semibold">Save plan only</button>
+      </div>
+      {canBuild && selected.length === 0 && <p className="mt-2 text-sm text-[#5c5747]">Choose at least one step above first — your app runs exactly what you pick, in your order.</p>}
+      <details id="requirements" className="mt-5 text-sm"><summary className="cursor-pointer font-bold">Technical details, license and requirements</summary>
+        <div className="mt-2 space-y-2 text-[#3d392c]"><p>{bp.licenseNotes}</p><p>Source: {repo.fullName} at the pinned commit shown in your build details. {bp.architecture || bp.summary}</p>
+        {bp.risks?.length > 0 && <ul className="list-disc pl-5">{bp.risks.map((r: string, i: number) => <li key={i}>{r}</li>)}</ul>}
+        {bp.commercialAlternatives?.length > 0 && <div><p className="font-bold">Compared with paid tools</p><ul className="mt-1 space-y-1">{bp.commercialAlternatives.map((a, i) => <li key={i}><strong>{a.name}</strong> — {a.note}</li>)}</ul></div>}</div></details>
     </section>
   </div>);
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchRepo, parseGitHubUrl } from "@/lib/github";
 import { analyzeWithModel } from "@/lib/model";
+import { buildCanonicalGraph, graphRevision } from "@/lib/capabilities";
 import { requireUser } from "@/lib/auth";
 import { checkQuota } from "@/lib/ratelimit";
 // Analysis fans out to GitHub + the model: it needs a session and a quota
@@ -16,6 +17,9 @@ export async function POST(req: NextRequest) {
   try {
     const repo = await fetchRepo(p.owner, p.repo);
     const { blueprint, source, cachedTokens } = await analyzeWithModel(repo);
-    return NextResponse.json({ repo, blueprint, source, cachedTokens: cachedTokens ?? null });
+    // The canonical, revision-bound capability graph: the UI selects from
+    // these exact ids and the worker validates against the same builder.
+    const graph = buildCanonicalGraph(repo);
+    return NextResponse.json({ repo, blueprint, graph, graphRevision: graphRevision(graph), source, cachedTokens: cachedTokens ?? null });
   } catch (e) { return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 502 }); }
 }

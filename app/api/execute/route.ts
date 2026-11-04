@@ -28,7 +28,11 @@ export async function POST(req: NextRequest) {
   if (app.exec.capabilityId && operation && operation !== app.exec.capabilityId && !app.operations.includes(operation)) return NextResponse.json({ error: "Operation is not executable for this app version." }, { status: 403 });
   const input = String(b.input ?? ""); if (input.length > 20_000) return NextResponse.json({ error: "Input too large (20k max)" }, { status: 413 });
   try {
-    const output = await activeProvider().run(app.exec.kind, app.exec, input);
+    // Dispatch the app's ACTUAL ordered operations: a multi-step app runs
+    // its full chain in the published order, each output feeding the next.
+    const chain = app.execChain?.length ? app.execChain : [app.exec];
+    let output = input;
+    for (const s of chain) output = await activeProvider().run(s.kind, s, output);
     await audit("app.executed", u.userId, app.id, providerStatus().configured);
     await recordExecution(app.id, u.userId, { at: Date.now(), operation, outcome: "succeeded", detail: `via ${activeProvider().name}` });
     return NextResponse.json({ output, grant: verdict.reason, provider: activeProvider().name });

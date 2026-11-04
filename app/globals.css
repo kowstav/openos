@@ -1,8 +1,19 @@
 @import "tailwindcss";
-@theme { --font-display: Georgia, "Times New Roman", serif; --font-body: ui-sans-system, system-ui, sans-serif; --color-accent: #e8ff47; --color-surface: #141416; --color-canvas: #0b0b0c; --spacing-card: 1.25rem; }
-html { color-scheme: dark; }
-body { background: #0b0b0c; color: #ececec; font-family: ui-sans-system, system-ui, sans-serif; }
+@theme {
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-body: ui-sans-system, system-ui, sans-serif;
+  --color-accent: #d9e021;
+  --color-paper: #f2ecdd;
+  --color-paper-deep: #e9e1cd;
+  --color-ink: #1c1a14;
+  --color-surface: #fffdf6;
+}
+/* OpenOS workbench: warm paper, ink text, citron reserved for the selected
+   state and the next important action. Media surfaces carry the color. */
+html { color-scheme: light; }
+body { background: #f2ecdd; color: #1c1a14; font-family: ui-sans-system, system-ui, sans-serif; }
 .font-display { font-family: Georgia, "Times New Roman", serif; }
-::selection { background: #e8ff47; color: #111; }
-:focus-visible { outline: 2px solid #e8ff47; outline-offset: 2px; }
+::selection { background: #d9e021; color: #1c1a14; }
+:focus-visible { outline: 3px solid #1c1a14; outline-offset: 2px; border-radius: 4px; }
+input, textarea, select { color: #1c1a14; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

@@ -17,16 +17,15 @@ function pick(text: string, table: Record<string, string>, rules: [RegExp, strin
   for (const op of fallback) if (!found.length) found.push(op);
   return found.filter((o) => table[o]);
 }
-export function generateApp(input: { repo: string; prompt: string; selectedCapabilities?: string[] }): GeneratedApp {
+export function generateApp(input: { repo: string; prompt: string; selectedCapabilities?: string[]; workflowOrder?: string[] }): GeneratedApp {
   const prompt = (input.prompt || "").trim();
   const t = prompt.toLowerCase(); const repo = input.repo;
   let operations: string[] = []; let studioUrl = "/workspace"; let title = ""; let inputs: string[] = []; let outputs: string[] = [];
   const warnings: string[] = [];
   if (/pdf-lib/i.test(repo)) {
     operations = pick(t, PDF_OPS, [[/merge|combin|join|invoice/, "merge"], [/split|extract|single page|one page/, "split"], [/rotat|sideways/, "rotate"], [/watermark|stamp|brand|company name|confidential/, "watermark"], [/title|metadata|organize|rename/, "metadata"]], ["merge"]);
-    // Multi-step pipelines run in a fixed safe order regardless of word order.
-    const order = ["merge", "split", "rotate", "watermark", "metadata"];
-    operations.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    // The person's chosen order IS the execution order. OpenOS never
+    // re-sorts steps into a different pipeline than the one they picked.
     studioUrl = `/studio/pdf?ops=${operations.join(",")}`; inputs = ["PDF file(s) you select"]; outputs = ["Processed PDF download"];
     title = /invoice/.test(t) ? "Invoice Processor" : "My PDF Workflow";
   } else if (/rembg|imgly/i.test(repo)) {
@@ -43,14 +42,23 @@ export function generateApp(input: { repo: string; prompt: string; selectedCapab
     title = "Implementation plan";
     warnings.push("No vetted adapter for this repository yet. OpenOS saved an honest plan — it did not deploy untested code.");
   }
-  if (input.selectedCapabilities?.length && operations.length) {
-    warnings.push(`Your capability-graph selection was noted (${input.selectedCapabilities.length} selected). Operations above are the executable subset.`);
-  }
   const table = /pdf-lib/i.test(repo) ? PDF_OPS : IMG_OPS;
-  const steps = operations.map((op) => ({ op, label: table[op] || op }));
-  if (operations.includes("ocr")) steps.splice(0, steps.length, { op: "ocr", label: "Extract text (OCR)" });
   const wanted: Capability[] = /pdf-lib/i.test(repo) ? ["file:read-selected", "file:download"] : ["file:read-selected", "file:download"];
   const permissions: string[] = []; const blocked: string[] = [];
+  // An explicit selection (canonical capability ids, in the person's order)
+  // is authoritative: the app runs exactly those operations in that order.
+  // Nothing selected is silently dropped and nothing unselected is added.
+  if (input.workflowOrder?.length && operations.length) {
+    const capToOp: Record<string, string> = { "pdf.merge": "merge", "pdf.extract": "split", "pdf.rotate": "rotate", "pdf.watermark": "watermark", "pdf.metadata": "metadata", "image.cutout": "remove-bg", "image.center": "center", "image.resize": "resize", "image.export": "compress", "ocr.extract": "ocr" };
+    const chosen = input.workflowOrder.map((id) => capToOp[id]).filter(Boolean);
+    if (chosen.length) operations = [...new Set(chosen)];
+    const unmapped = input.workflowOrder.filter((id) => !capToOp[id]);
+    if (unmapped.length) blocked.push(`Selected capabilities have no operation in this adapter: ${unmapped.join(", ")} — the app was not built around them.`);
+  } else if (input.selectedCapabilities?.length && operations.length) {
+    warnings.push(`Your capability selection was noted (${input.selectedCapabilities.length} selected). Operations above are the executable subset.`);
+  }
+  const steps = operations.map((op) => ({ op, label: table[op] || op }));
+  if (operations.includes("ocr")) steps.splice(0, steps.length, { op: "ocr", label: "Extract text (OCR)" });
   for (const c of wanted) (authorize(c) === "deny" ? blocked : permissions).push(c);
   if (/camera|microphone|mic\b/.test(t)) { blocked.push("camera/microphone requested in prompt — requires explicit gateway approval, never granted by the model"); }
   if (/shell|credential|password|api key/.test(t)) { blocked.push("shell/credential access requested in prompt — always denied by the permission gateway"); }

@@ -2,7 +2,7 @@
 
 OpenOS turns open-source GitHub repositories into personalized, immediately usable cloud applications. Paste a public GitHub URL, get an AI-generated visual blueprint of what the repository does, and — for vetted libraries — launch a real working app in your browser. No local installation.
 
-See [PLAN.md](/workspaces/openos/PLAN.md) for milestones and acceptance criteria.
+See [MILESTONES.md](/workspaces/openos/MILESTONES.md) for the milestone log and [plan.md](/workspaces/openos/plan.md) for the full 30-section master plan. (The shorter log was renamed from `PLAN.md` so the two documents no longer collide on case-insensitive filesystems.)
 
 ## Features
 
@@ -16,15 +16,15 @@ See [PLAN.md](/workspaces/openos/PLAN.md) for milestones and acceptance criteria
 
 Unsupported repositories get an honest compatibility assessment and a saved implementation plan. OpenOS never pretends an untested repository was deployed, and never executes arbitrary repository code.
 
-## Quick start
+## Quick start (no keys needed)
 
 ```bash
-cp .env.example .env.local   # fill in MODEL_API_KEY (see below)
-npm install
-npm run dev -- -H 127.0.0.1 -p 3000
+npm ci --ignore-scripts
+npm run build
+npm run start -- -p 3100
 ```
 
-Open http://127.0.0.1:3000 in your browser.
+Open http://127.0.0.1:3100 in your browser, then sign in from **My Apps** with any name or email — the same handle opens the same library everywhere. Keys only enable the credentialed paths (live Muse analysis/conversion, Modal isolated execution); see `.env.example` and `docs/release-keyless.md` for what is verified with and without them, and `docs/coverage-ledger.md` for the 30-section plan status.
 
 Production:
 

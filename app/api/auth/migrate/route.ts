@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { saveApp, audit } from "@/lib/store";
+import { saveApp, audit, hashId } from "@/lib/store";
 // Explicit legacy migration (I2): validated localStorage/JSON records are
 // imported ONLY into the caller's authenticated account. Legacy execution
 // grants are never restored; imported apps must request fresh grants, and
@@ -21,9 +21,13 @@ export async function POST(req: NextRequest) {
   const parsed = z.object({ apps: z.array(LegacyApp).max(100) }).safeParse(b);
   if (!parsed.success) return NextResponse.json({ error: "Invalid legacy data — nothing imported" }, { status: 400 });
   let imported = 0;
+  // Imported ids are namespaced by owner: two accounts migrating the same
+  // legacy id must never overwrite each other's app.
+  const ownerTag = hashId(u.userId);
   for (const a of parsed.data.apps) {
+    const newId = `migrated-${ownerTag}-${a.id}`.slice(0, 120);
     await saveApp({
-      id: `migrated-${a.id}`.slice(0, 120), ownerId: u.userId, title: a.title, repo: a.repo, prompt: a.prompt,
+      id: newId, appKey: `appkey-${newId}`, ownerId: u.userId, title: a.title, repo: a.repo, prompt: a.prompt,
       studioUrl: a.studioUrl || "/workspace", operations: a.operations, steps: a.operations.map((op) => ({ op, label: op })),
       permissions: a.permissions.filter((p) => !["shell:exec", "credentials:read", "filesystem:wide"].includes(p)),
       blocked: [], warnings: ["Migrated from legacy local storage. Execution requires a fresh permission grant."],

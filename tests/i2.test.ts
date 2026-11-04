@@ -111,13 +111,21 @@ describe("I2 legacy migration + scoped object storage", () => {
   it("imports legacy apps only into the caller's account, without exec grants", async () => {
     const { POST: migratePOST } = await import("@/app/api/auth/migrate/route");
     const { GET: appGET } = await import("@/app/api/apps/[id]/route");
+    const { listApps, hashId } = await import("@/lib/store");
     const a = await auth.createSession(); const b = await auth.createSession();
     const res = await migratePOST(req("http://x/api/auth/migrate", a.token, { apps: [{ id: "old1", title: "Old", repo: "x/y" }] }));
     expect(res.status).toBe(200); expect((await res.json()).imported).toBe(1);
-    const ctx = { params: Promise.resolve({ id: "migrated-old1" }) };
-    const got = await appGET(req("http://x/api/apps/migrated-old1", a.token), ctx);
+    // Imported ids are namespaced by owner, so two accounts migrating the
+    // same legacy id can never overwrite each other.
+    const expectedId = `migrated-${hashId(a.userId)}-old1`;
+    const ctx = { params: Promise.resolve({ id: expectedId }) };
+    const got = await appGET(req(`http://x/api/apps/${expectedId}`, a.token), ctx);
     expect(got.status).toBe(200); expect((await got.json()).app.exec).toBeNull();
-    expect((await appGET(req("http://x/api/apps/migrated-old1", b.token), ctx)).status).toBe(404);
+    expect((await appGET(req(`http://x/api/apps/${expectedId}`, b.token), ctx)).status).toBe(404);
+    // Same legacy id into account B creates a DISTINCT app; A's still works.
+    await migratePOST(req("http://x/api/auth/migrate", b.token, { apps: [{ id: "old1", title: "Old B", repo: "x/y" }] }));
+    expect((await listApps(a.userId)).some((x) => x.id === expectedId)).toBe(true);
+    expect((await listApps(b.userId)).some((x) => x.id === `migrated-${hashId(b.userId)}-old1`)).toBe(true);
   });
   it("isolates objects per owner and rejects traversal keys", async () => {
     await storage.putObject("A", "out/result.txt", "hello");

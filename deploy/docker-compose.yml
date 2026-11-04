@@ -1,6 +1,11 @@
-# Local production-shaped stack (I4): control plane + durable data volume.
-# The sandbox provider, model and database stay external credentials; with
-# none set, untrusted execution refuses (fail closed) and health reports it.
+# Local production-shaped stack: control plane (web) + separately runnable
+# worker + durable data volume. Bring it up WITHOUT cloud keys:
+#   docker compose -f deploy/docker-compose.yml up --build
+# Untrusted execution then refuses (fail closed) and health reports it;
+# trusted studios and the keyless journeys still work. The relational
+# store is the transactional store in OPENOS_DATA_DIR behind the lib/store
+# API (swap Postgres/S3 behind those same functions for multi-instance
+# deploys); quotas/leases/grants are enforced at the same call sites.
 services:
   web:
     build: { context: .., dockerfile: deploy/Dockerfile }
@@ -9,6 +14,7 @@ services:
       - OPENOS_DATA_DIR=/data
       # Deployment config (not secrets): exact provider selection.
       - SANDBOX_PROVIDER=${SANDBOX_PROVIDER:-}
+      - OPENOS_WORKER_TOKEN=${OPENOS_WORKER_TOKEN:-openos-local-worker}
       # Secrets: inject via host env / secret store, never commit values.
       - MODEL_API_KEY=${MODEL_API_KEY:-}
       - META_API_KEY=${META_API_KEY:-}
@@ -20,5 +26,13 @@ services:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
+  worker:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    command: ["node", "scripts/worker.mjs"]
+    environment:
+      - OPENOS_URL=http://web:3000
+      - OPENOS_WORKER_TOKEN=${OPENOS_WORKER_TOKEN:-openos-local-worker}
+      - WORKER_INTERVAL_MS=3000
+    depends_on: ["web"]
 volumes:
   openos-data:

@@ -62,4 +62,7 @@ export async function revokeGrant(id: string, userId?: string) {
   return tx(async () => { const all = await readAll(); const g = all.find((x) => x.id === id); if (!g || (userId && g.userId !== userId)) return false; g.revoked = true; await writeAll(all); return true; });
 }
 export async function listGrantsForUser(userId: string) { return (await readAll()).filter((g) => g.userId === userId); }
+export async function revokeGrantsForApp(userId: string, appId: string) {
+  return tx(async () => { const all = await readAll(); let n = 0; for (const g of all) { if (g.userId === userId && g.appId === appId && !g.revoked) { g.revoked = true; n++; } } if (n) await writeAll(all); return n; });
+}
 export async function cleanupGrants(now = Date.now()) { return tx(async () => { const all = await readAll(); const kept = all.filter((g) => g.expiresAt > now - 3600_000); await writeAll(kept); return all.length - kept.length; }); }

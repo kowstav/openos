@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
   if (!b.url) return NextResponse.json({ error: "url is required" }, { status: 400 });
   try {
-    const job = await createJob(String(b.url), String(b.prompt || ""), u.userId, b.idempotencyKey ? String(b.idempotencyKey) : undefined, { selectedCapabilities: Array.isArray(b.selectedCapabilities) ? b.selectedCapabilities.map(String).slice(0,20) : undefined, workflowOrder: Array.isArray(b.workflowOrder) ? b.workflowOrder.map(String).slice(0,20) : undefined, options: b.options && typeof b.options==="object" ? b.options : undefined });
+    const job = await createJob(String(b.url), String(b.prompt || ""), u.userId, b.idempotencyKey ? String(b.idempotencyKey) : undefined, { selectedCapabilities: Array.isArray(b.selectedCapabilities) ? b.selectedCapabilities.map(String).slice(0,20) : undefined, workflowOrder: Array.isArray(b.workflowOrder) ? b.workflowOrder.map(String).slice(0,20) : undefined, options: b.options && typeof b.options==="object" ? b.options : undefined, appKey: b.appKey ? String(b.appKey).slice(0, 120) : undefined });
     return NextResponse.json({ job });
   } catch (e) { return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 400 }); }
 }

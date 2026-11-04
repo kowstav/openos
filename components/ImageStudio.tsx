@@ -32,17 +32,17 @@ export default function ImageStudio({ initialOps }: { initialOps?: string[] }) {
     finally { setBusy(false); }
   }
   return (<div className="space-y-5">
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Operations">{ALL.map((o) => <button key={o.id} onClick={() => toggle(o.id)} aria-pressed={ops.includes(o.id)} className={`rounded-full border px-4 py-2 text-sm ${ops.includes(o.id) ? "border-[#e8ff47] bg-[#e8ff47] font-semibold text-black" : "border-white/20 hover:border-white/50"}`}>{o.label}</button>)}</div>
-    <div className="flex flex-wrap gap-4 text-sm text-zinc-300">
-      <label>Canvas size <input type="number" min={200} max={4000} step={100} value={size} onChange={(e) => setSize(Number(e.target.value))} className="ml-1 w-24 rounded-md border border-white/15 bg-white/5 px-2 py-1" /> px</label>
-      <label>Margin <input type="number" min={0} max={40} value={margin} onChange={(e) => setMargin(Number(e.target.value))} className="ml-1 w-20 rounded-md border border-white/15 bg-white/5 px-2 py-1" /> %</label>
-      <label>Background <input type="color" value={bg} onChange={(e) => setBg(e.target.value)} className="ml-1 h-8 w-12 rounded border border-white/15 bg-white/5" /></label>
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Operations">{ALL.map((o) => <button key={o.id} onClick={() => toggle(o.id)} aria-pressed={ops.includes(o.id)} className={`rounded-full border px-4 py-2 text-sm ${ops.includes(o.id) ? "border-[#e8ff47] bg-[#d9e021] ring-2 ring-[#1c1a14] font-semibold text-black" : "border-[#1c1a14]/40 hover:border-white/50"}`}>{o.label}</button>)}</div>
+    <div className="flex flex-wrap gap-4 text-sm text-[#3d392c]">
+      <label>Canvas size <input type="number" min={200} max={4000} step={100} value={size} onChange={(e) => setSize(Number(e.target.value))} className="ml-1 w-24 rounded-md border border-[#1c1a14]/30 bg-white px-2 py-1" /> px</label>
+      <label>Margin <input type="number" min={0} max={40} value={margin} onChange={(e) => setMargin(Number(e.target.value))} className="ml-1 w-20 rounded-md border border-[#1c1a14]/30 bg-white px-2 py-1" /> %</label>
+      <label>Background <input type="color" value={bg} onChange={(e) => setBg(e.target.value)} className="ml-1 h-8 w-12 rounded border border-[#1c1a14]/30 bg-white" /></label>
     </div>
-    <label className="block cursor-pointer rounded-md border border-dashed border-white/25 p-6 text-center text-sm text-zinc-300 hover:border-[#e8ff47]/60">Choose image(s) — they stay on this device (batch up to 12)<input ref={fileRef} type="file" accept="image/*" multiple className="mt-3 block w-full text-xs" /></label>
-    <button onClick={run} disabled={busy || !ops.length} className="rounded-md bg-[#e8ff47] px-5 py-2.5 font-semibold text-black disabled:opacity-50">{busy ? "Processing…" : "Run my workflow"}</button>
-    {msg && <p role="status" className="text-sm text-zinc-300">{msg}</p>}
-    {results.length > 0 && <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2">{results.map((r) => <figure key={r.url}><img src={r.url} alt={`Processed ${r.name}`} className="w-full rounded-md border border-white/10 bg-[repeating-conic-gradient(#222_0_25%,#2c2c2c_0_50%)] bg-[length:16px_16px]" /><figcaption className="mt-1 flex items-center justify-between text-xs text-zinc-500"><span>{r.name} · {r.label}</span><a href={r.url} download={`openos-${r.name}`} className="text-[#e8ff47]">Download</a></figcaption></figure>)}</div>
-    <button onClick={() => results.forEach((r, i) => setTimeout(() => { const a = document.createElement("a"); a.href = r.url; a.download = `openos-${r.name}`; a.click(); }, i * 250))} className="rounded-md border border-[#e8ff47] px-5 py-2.5 font-semibold text-[#e8ff47]">Download all results together</button></div>}
+    <label className="block cursor-pointer rounded-md border border-dashed border-[#1c1a14]/40 p-6 text-center text-sm text-[#3d392c] hover:border-[#1c1a14]">Choose image(s) — they stay on this device (batch up to 12)<input ref={fileRef} type="file" accept="image/*" multiple className="mt-3 block w-full text-xs" /></label>
+    <button onClick={run} disabled={busy || !ops.length} className="rounded-md bg-[#d9e021] ring-2 ring-[#1c1a14] px-5 py-2.5 font-semibold text-black disabled:opacity-50">{busy ? "Processing…" : "Run my workflow"}</button>
+    {msg && <p role="status" className="text-sm text-[#3d392c]">{msg}</p>}
+    {results.length > 0 && <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2">{results.map((r) => <figure key={r.url}><img src={r.url} alt={`Processed ${r.name}`} className="w-full rounded-md border border-[#1c1a14] bg-[repeating-conic-gradient(#222_0_25%,#2c2c2c_0_50%)] bg-[length:16px_16px]" /><figcaption className="mt-1 flex items-center justify-between text-xs text-[#5c5747]"><span>{r.name} · {r.label}</span><a href={r.url} download={`openos-${r.name}`} className="text-[#1c1a14]">Download</a></figcaption></figure>)}</div>
+    <button onClick={() => results.forEach((r, i) => setTimeout(() => { const a = document.createElement("a"); a.href = r.url; a.download = `openos-${r.name}`; a.click(); }, i * 250))} className="rounded-md border border-[#e8ff47] px-5 py-2.5 font-semibold text-[#1c1a14]">Download all results together</button></div>}
   </div>);
 }
 async function chromaFallback(file: File): Promise<Blob> {

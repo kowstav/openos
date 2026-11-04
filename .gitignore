@@ -5,3 +5,6 @@ node_modules/
 *.log
 tsconfig.tsbuildinfo
 .openos-data/
+
+__pycache__/
+*.pyc

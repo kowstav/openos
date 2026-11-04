@@ -68,11 +68,15 @@ def main() -> int:
         req = json.load(sys.stdin)
     except Exception:
         return fail("invalid JSON request on stdin")
+    mode = str(req.get("mode", "combined"))
+    job_id = re.sub(r"[^A-Za-z0-9_-]", "", str(req.get("jobId", "adhoc")))[:64] or "adhoc"
     kind = str(req.get("kind", ""))
     spec = req.get("spec") or {}
     inp = str(req.get("input", ""))
     pkg, module, export = str(spec.get("packageName", "")), str(spec.get("module", "")), str(spec.get("exportName", ""))
-    if kind not in ("js", "js-cli", "python"):
+    if mode in ("build", "run", "destroy") and kind not in ("js", "js-cli", "python", "transcribe"):
+        return fail(f"unsupported kind: {kind!r}")
+    if mode == "combined" and kind not in ("js", "js-cli", "python"):
         return fail(f"unsupported kind: {kind!r}")
     if len(inp) > MAX_INPUT:
         return fail("input too large")
@@ -83,20 +87,57 @@ def main() -> int:
 
     app = modal.App.lookup("openos-conversions", create_if_missing=True)
     image = modal.Image.debian_slim(python_version="3.12").apt_install("nodejs", "npm", "git")
-    volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
+    # Per-job isolation: every job builds into its OWN directory on the
+    # volume (jobs/<jobId>/pkg). Jobs never share a writable artifact path.
+    job_name = f"openos-artifacts-{job_id}"
+    try:
+        volume = modal.Volume.from_name(job_name, create_if_missing=True)
+    except Exception:
+        volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
     mount = "/artifacts"
+    pkgdir = f"{mount}/jobs/{job_id}/pkg"
     build = runtime = None
     try:
+        if mode == "destroy":
+            runtime = modal.Sandbox.create(image=image, app=app, timeout=60, cpu=0.5, memory=256,
+                                           block_network=True, volumes={mount: volume})
+            run_checked(runtime, ["rm", "-rf", f"{mount}/jobs/{job_id}"])
+            volume.commit()
+            json.dump({"destroyed": job_id}, sys.stdout)
+            return 0
+        if mode == "run" or mode == "combined":
+            pass  # runtime phase below; build first when combined/build
         # ---- Build phase (install only; egress needed for registries) ----
-        build = modal.Sandbox.create(image=image, app=app, timeout=300, cpu=1.0, memory=512,
-                                     volumes={mount: volume})
-        run_checked(build, ["mkdir", "-p", f"{mount}/pkg"])
-        if kind == "python":
-            run_checked(build, ["pip", "install", "--quiet", "--target", f"{mount}/pkg", pkg])
-        else:
-            run_checked(build, ["npm", "install", "--prefix", f"{mount}/pkg", "--no-audit",
-                                "--no-fund", "--ignore-scripts", pkg])
-        volume.commit()
+        if mode in ("build", "combined"):
+            build = modal.Sandbox.create(image=image, app=app, timeout=300, cpu=1.0, memory=512,
+                                         volumes={mount: volume})
+            run_checked(build, ["mkdir", "-p", pkgdir])
+            if kind == "python" or kind == "transcribe":
+                run_checked(build, ["pip", "install", "--quiet", "--target", pkgdir, pkg])
+            else:
+                run_checked(build, ["npm", "install", "--prefix", pkgdir, "--no-audit",
+                                    "--no-fund", "--ignore-scripts", pkg])
+            digest = run_checked(build, ["python3", "-c",
+                                         "import hashlib,os,sys; h=hashlib.sha256(); root=sys.argv[1];\n"
+                                         "for dp,dn,fn in os.walk(root):\n"
+                                         " for f in sorted(fn):\n"
+                                         "  p=os.path.join(dp,f); h.update(os.path.relpath(p,root).encode()); h.update(open(p,'rb').read())\n"
+                                         "print(h.hexdigest())", pkgdir]).strip()
+            volume.commit()
+            if mode == "build":
+                json.dump({"digest": digest, "ref": f"jobs/{job_id}/pkg"}, sys.stdout)
+                return 0
+        if mode == "run":
+            # Runtime NEVER installs: the exact built artifact must exist.
+            probe = modal.Sandbox.create(image=image, app=app, timeout=30, cpu=0.5, memory=256,
+                                         block_network=True, volumes={mount: volume})
+            try:
+                run_checked(probe, ["test", "-d", pkgdir])
+            except Exception:
+                return fail("artifact not found for this job — run mode never reinstalls", 5)
+            finally:
+                try: probe.terminate()
+                except Exception: pass
         # ---- Runtime phase (exact built artifact; network denied) ----
         try:
             runtime = modal.Sandbox.create(image=image, app=app, timeout=30, cpu=1.0, memory=512,
@@ -106,7 +147,7 @@ def main() -> int:
         if kind == "python":
             fn = export.split(".")[-1]
             code = ("import sys, json\n"
-                    f"sys.path.insert(0, '{mount}/pkg')\n"
+                    f"sys.path.insert(0, '{pkgdir}')\n"
                     f"from {module} import {fn}\n"
                     "d = json.load(sys.stdin)\n"
                     f"v = {fn}(d['input'])\n"
@@ -115,8 +156,25 @@ def main() -> int:
             run_checked(runtime, ["python3", "-c",
                                   "import sys; open(sys.argv[1], 'w').write(sys.argv[2])", harness, code])
             out = run_checked(runtime, ["python3", harness], stdin_text=json.dumps({"input": inp}))
+        elif kind == "transcribe":
+            # CPU-capable faster-whisper profile: tiny model, int8 compute.
+            # Input is base64 audio on stdin (size-bounded by the caller).
+            code = ("import sys, json, base64, tempfile, os\n"
+                    f"sys.path.insert(0, '{pkgdir}')\n"
+                    "from faster_whisper import WhisperModel\n"
+                    "d = json.load(sys.stdin)\n"
+                    "audio = base64.b64decode(d['input'])\n"
+                    "model = WhisperModel(d.get('model', 'tiny'), device='cpu', compute_type='int8')\n"
+                    "fd, path = tempfile.mkstemp(suffix='.wav'); os.write(fd, audio); os.close(fd)\n"
+                    "segs, info = model.transcribe(path, beam_size=1)\n"
+                    "out = [{'start': s.start, 'end': s.end, 'text': s.text.strip()} for s in segs]\n"
+                    "sys.stdout.write(json.dumps({'segments': out, 'language': info.language}))")
+            harness = f"{mount}/harness-transcribe.py"
+            run_checked(runtime, ["python3", "-c",
+                                  "import sys; open(sys.argv[1], 'w').write(sys.argv[2])", harness, code])
+            out = run_checked(runtime, ["python3", harness], stdin_text=inp)
         elif kind == "js-cli":
-            bin_path = f"{mount}/pkg/node_modules/.bin/{export}"
+            bin_path = f"{pkgdir}/node_modules/.bin/{export}"
             args = inp.split()[:8]
             if any(re.search(r"[;|&$`\\]", a) for a in args):
                 return fail("arguments contain shell metacharacters — refused")
@@ -131,7 +189,7 @@ def main() -> int:
             harness = f"{mount}/harness.cjs"
             run_checked(runtime, ["node", "-e",
                                   "require('fs').writeFileSync(process.argv[1], process.argv[2])", harness, harness_js])
-            out = run_checked(runtime, ["node", harness, f"{mount}/pkg/node_modules/{module}", export, inp])
+            out = run_checked(runtime, ["node", harness, f"{pkgdir}/node_modules/{module}", export, inp])
         json.dump({"output": bounded(out)}, sys.stdout)
         return 0
     except Exception as e:  # failure propagation: non-zero exit, bounded stderr

@@ -29,3 +29,20 @@ export async function deleteObject(ownerId: string, key: string) {
   await fs.unlink(path.join(ownerDir(ownerId), key + ".meta.json")).catch(() => {});
 }
 export async function deleteOwnerObjects(ownerId: string) { await fs.rm(ownerDir(ownerId), { recursive: true, force: true }); }
+// Deleting ONE app must remove only that app's objects (prefix
+// `apps/<appId>/`), never the owner's whole bucket.
+export async function deleteAppObjects(ownerId: string, appId: string) {
+  if (!/^[A-Za-z0-9._-]+$/.test(appId)) throw new Error("Invalid app id");
+  await fs.rm(path.join(ownerDir(ownerId), "apps", appId), { recursive: true, force: true });
+}
+export async function listOwnerObjectKeys(ownerId: string, prefix = ""): Promise<string[]> {
+  const base = path.join(ownerDir(ownerId), prefix);
+  const out: string[] = [];
+  async function walk(dir: string, rel: string) {
+    let entries: import("fs").Dirent[] = [];
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) { if (e.isDirectory()) await walk(path.join(dir, e.name), `${rel}${e.name}/`); else if (!e.name.endsWith(".meta.json")) out.push(rel + e.name); }
+  }
+  await walk(base, prefix ? `${prefix.replace(/\/?$/, "/")}` : "");
+  return out;
+}

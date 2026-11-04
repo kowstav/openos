@@ -13,6 +13,27 @@ export async function createSession(userId?: string) {
   await saveSession({ tokenHash: hashToken(token), userId: uid, createdAt: Date.now(), expiresAt: Date.now() + SESSION_TTL_MS });
   return { token, userId: uid };
 }
+// Keyless development identity: a stable handle maps deterministically to
+// one owner id, so the same person opening OpenOS in a fresh browser or on
+// another device and entering the same handle sees the same library. This
+// is a DEVELOPMENT sign-in (anyone who knows the handle can use it); a
+// production deployment swaps it for an IdP behind the same session record.
+// Guests (random ids) are a different, recoverable-only-by-cookie identity.
+export function userIdForHandle(handle: string): string {
+  const norm = handle.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 80);
+  return `user-dev-${createHash("sha256").update(`openos-dev:${norm}`).digest("hex").slice(0, 24)}`;
+}
+export function identityKind(userId: string): "account" | "guest" {
+  return userId.startsWith("user-dev-") ? "account" : "guest";
+}
+// Mutating browser requests must come from our own origin when an Origin
+// header is present (CSRF defence-in-depth alongside SameSite=Lax cookies).
+// Non-browser clients (tests, API callers) send no Origin and are unaffected.
+export function crossOriginDenied(req: NextRequest): boolean {
+  const origin = req.headers.get("origin");
+  if (!origin) return false;
+  try { return new URL(origin).host !== req.headers.get("host"); } catch { return true; }
+}
 export function tokenFromRequest(req: NextRequest): string | null {
   const auth = req.headers.get("authorization");
   if (auth?.startsWith("Bearer ")) return auth.slice(7);
