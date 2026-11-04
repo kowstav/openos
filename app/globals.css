@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@theme { --font-display: Georgia, "Times New Roman", serif; --font-body: ui-sans-system, system-ui, sans-serif; }
+html { color-scheme: dark; }
+body { background: #0b0b0c; color: #ececec; font-family: ui-sans-system, system-ui, sans-serif; }
+.font-display { font-family: Georgia, "Times New Roman", serif; }
+::selection { background: #e8ff47; color: #111; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
