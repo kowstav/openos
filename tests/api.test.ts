@@ -103,7 +103,7 @@ describe("POST /api/pdf unknown operation", () => {
 
 import { analyzeWithModel } from "@/lib/model";
 function repoFixture(fullName: string) {
-  return { fullName, description: "A library", stars: 1, forks: 0, language: "TypeScript", languages: ["TypeScript"], license: "MIT", defaultBranch: "main", sha: "abc123", htmlUrl: "https://github.com/x/y", topics: [], readme: "# lib\n- Does things", updatedAt: "", openIssues: 0 };
+  return { fullName, description: "A library", stars: 1, forks: 0, language: "TypeScript", languages: ["TypeScript"], license: "MIT", defaultBranch: "main", sha: "abc123", htmlUrl: "https://github.com/x/y", topics: [], readme: "# lib\n- Does things", updatedAt: "", openIssues: 0, files: [], pkg: null, pyproject: "" };
 }
 describe("Muse integration (Meta API, network mocked)", () => {
   afterEach(() => { vi.unstubAllGlobals(); delete process.env.MODEL_API_KEY; delete process.env.META_API_KEY; });

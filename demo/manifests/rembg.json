@@ -1,0 +1,1 @@
+{ "repo": "danielgatis/rembg", "status": "runnable", "adapter": "browser-ml (IMG.LY model; rembg Python code is not executed)", "operations": ["remove-bg", "resize", "white-bg", "compress"], "expectedOutputs": ["transparent PNG for a product photo", "1200px white-background marketplace export"] }

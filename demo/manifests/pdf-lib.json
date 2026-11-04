@@ -1,0 +1,1 @@
+{ "repo": "Hopding/pdf-lib", "status": "runnable", "adapter": "trusted-server", "operations": ["merge", "split", "rotate", "watermark", "metadata", "pipeline"], "expectedOutputs": ["merged PDF page count equals sum of inputs", "pipeline merge+metadata stamps the requested title"] }

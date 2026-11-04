@@ -10,6 +10,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/">Marketplace</Link>
           <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/workspace">My Apps</Link>
           <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/studio/pdf">PDF Studio</Link>
+          <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/studio/image">Photo Studio</Link>
           <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/studio/ocr">OCR</Link>
         </nav>
       </div>

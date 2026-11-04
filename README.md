@@ -90,6 +90,10 @@ Notes:
 - Blueprints are kept in an in-memory, commit-SHA-keyed cache and in the browser's `localStorage`. There is no database to provision or back up.
 - Set `GITHUB_TOKEN` in production to avoid GitHub's 60-request/hour unauthenticated limit on the marketplace.
 
+## Conversion engine & artifacts
+
+Paste any public GitHub URL and choose **Create my app**: OpenOS ingests the repo (metadata, README, file tree, manifests), classifies a conversion strategy from evidence, loads the relevant audited skills from `.agents/skills/` (all validated with `muse skills validate`), builds an isolated environment, executes a real verification sample, and persists a runnable app. Every conversion stores a schema-validated **ConversionPlan, BuildManifest (source SHA + reproducible install), SecurityManifest, VerificationReport, and AppVersion**, shown on the app's page. Repositories that cannot run here (full web apps, containers, GPU libraries) receive honest partial plans — never fake deploys. Live generalization results for previously unseen repositories are recorded in [demo/generalization.json](/workspaces/openos/demo/generalization.json); the Modal Sandboxes migration plan is in [docs/modal-sandboxes.md](/workspaces/openos/docs/modal-sandboxes.md).
+
 ## Security model
 
 - Only curated, vetted libraries run, through trusted server-side adapters. Arbitrary repositories are analyzed, never executed.

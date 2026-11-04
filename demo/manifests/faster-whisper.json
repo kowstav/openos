@@ -1,0 +1,1 @@
+{ "repo": "SYSTRAN/faster-whisper", "status": "plan-only", "reason": "Requires Python + model weights (+GPU for speed). No such isolated runtime is wired yet, so OpenOS records an honest conversion plan and never fabricates a transcript.", "operations": [] }
