@@ -1,0 +1,90 @@
+export default async function workflow(host) {
+  const evidenceSchema = {
+    type: "object",
+    required: ["complete", "evidence", "unresolved"],
+    properties: {
+      complete: { type: "boolean" },
+      evidence: { type: "array", items: { type: "string" } },
+      unresolved: { type: "array", items: { type: "string" } }
+    }
+  };
+  const notesFor = (r, s) => (typeof r?.notes === "string" && r.notes.trim()) ? [{source:s, ref:r.ref, value:r.notes}] : [];
+  const compact = (r, scope) => {
+    const failed = r === null || !!r.error_kind;
+    const data = !failed && r.data && typeof r.data === "object" ? r.data : null;
+    const ev = !failed && Array.isArray(data?.evidence) ? data.evidence.filter(Boolean) : [];
+    const un = !failed && Array.isArray(data?.unresolved) ? data.unresolved.filter(Boolean) : [];
+    const complete = data?.complete === true && ev.length>0 && un.length===0;
+    return { scope, ref: r?.ref ?? null, complete, evidence: ev, unresolved: complete?[]:(un.length?un:[failed?`${scope}: failed ${r?.error_kind ?? "null"}`:`${scope}: incomplete`]), notes: notesFor(r,scope), text: r?.text ?? null };
+  };
+
+  host.phase("Discovery + I1 + S1 static");
+  const discovery = await host.agent({
+    input: `You are the discovery + I1 + S1 agent for OpenOS. Workspace: /workspaces/openos. Read IN FULL: /workspaces/openos/plan.md (30-section master plan = product spec), /workspaces/openos/01-openos-implementation-prompts.md, /workspaces/openos/02-openos-security-prompts.md, /workspaces/openos/03-openos-web-design-prompts.md. Also inventory the checkout: list files (ls -la, find maxdepth 3), read package.json / pyproject / README if present, git status/log. DO NOT run unfamiliar code yet (no npm install/run, no python execution of repo code, no build) — static inspection only per instruction "Start with I1 and S1 before running unfamiliar code". Execute I1 and S1 as defined in the prompt files (interpret them from the files). Produce: (1) what I1 requires, (2) what S1 requires, (3) current checkout state vs plan gaps, (4) ordered execution plan for I2-I4, S2, U1-U3, S3, I5 mapped to concrete files/routes. Write a file /workspaces/openos/.openos-discovery.md with this analysis if useful. Return complete=true only if you read all 4 spec files fully and inventoried the repo. Evidence must cite file paths + section/prompt ids. List unresolved questions.`,
+    schema: evidenceSchema,
+    label: "discovery-I1-S1"
+  });
+  const d = compact(discovery, "discovery-I1-S1");
+
+  host.phase("I2 implementation");
+  const i2 = await host.agent({
+    input: `You are the I2 implementation agent for OpenOS. Prior discovery result ref: ${discovery?.ref ?? "none"}. Summary: ${JSON.stringify(d).slice(0,6000)}. Read /workspaces/openos/plan.md, /workspaces/openos/01-openos-implementation-prompts.md (focus I2), /workspaces/openos/02-openos-security-prompts.md (S1 constraints), /workspaces/openos/03-openos-web-design-prompts.md, and /workspaces/openos/.openos-discovery.md if present. Inspect current checkout files before editing. Implement I2 fully in /workspaces/openos per the prompts and master plan. Follow existing code conventions. Do not run unfamiliar pre-existing code blindly — inspect first. You MAY run build/test commands needed to verify your own changes. Make real file edits with write/edit tools. Keep scope exactly to I2 + required scaffolding. Return evidence: files created/changed (paths), key decisions, commands run and results. complete=true only if I2 acceptance criteria from the prompt file are met.`,
+    schema: evidenceSchema,
+    label: "I2-implementation"
+  });
+  const i2c = compact(i2, "I2");
+
+  host.phase("I3 implementation");
+  const i3 = await host.agent({
+    input: `You are the I3 implementation agent for OpenOS. Prior refs: discovery=${discovery?.ref ?? "none"}, I2=${i2?.ref ?? "none"}. Summaries: discovery=${JSON.stringify(d).slice(0,3000)} I2=${JSON.stringify(i2c).slice(0,4000)}. Read plan.md, 01- prompts (focus I3, re-check I2 done state), 02- S1/S2 constraints, and inspect current files on disk (do not trust summaries alone). Implement I3 fully in /workspaces/openos. Make real edits. Run relevant build/tests for your changes and record results. Return evidence with file paths and command outputs. complete=true only if I3 acceptance criteria are met.`,
+    schema: evidenceSchema,
+    label: "I3-implementation"
+  });
+  const i3c = compact(i3, "I3");
+
+  host.phase("I4 + S2 hardening");
+  const i4 = await host.agent({
+    input: `You are the I4 + S2 agent for OpenOS. Prior refs: discovery=${discovery?.ref ?? "none"}, I2=${i2?.ref ?? "none"}, I3=${i3?.ref ?? "none"}. Summaries: I2=${JSON.stringify(i2c).slice(0,3000)} I3=${JSON.stringify(i3c).slice(0,3000)}. Read plan.md, 01- (focus I4), 02- (focus S2, also S1), 03- prompts. Inspect current implementation on disk. Implement I4 fully AND apply S2 security hardening to the implementation (per 02- file). Make real edits. Run build/tests. Evidence: files changed, S2 controls applied (name each), commands/results. complete=true only if I4 done and S2 applied.`,
+    schema: evidenceSchema,
+    label: "I4-S2"
+  });
+  const i4c = compact(i4, "I4-S2");
+
+  host.phase("U1-U3 web routes");
+  const ui = await host.agent({
+    input: `You are the U1-U3 web design agent for OpenOS. Prior refs: discovery=${discovery?.ref ?? "none"}, I4=${i4?.ref ?? "none"}. Summary I4=${JSON.stringify(i4c).slice(0,4000)}. Read plan.md, 03-openos-web-design-prompts.md (focus U1,U2,U3), 01- and 02- for constraints. Inspect the real web app on disk: find routes/pages (search for route definitions, app router, pages). Apply U1-U3 to the REAL web routes (not a mock). Polish UI per prompts while keeping functionality. Make real edits. Run build/dev checks you can. Evidence: routes touched (paths), design changes per U1/U2/U3, commands/results. complete=true only if U1,U2,U3 all applied to real routes.`,
+    schema: evidenceSchema,
+    label: "U1-U3-web"
+  });
+  const uic = compact(ui, "U1-U3");
+
+  host.phase("S3 + I5 verification");
+  const final = await host.agent({
+    input: `You are the S3 + I5 verification/finishing agent for OpenOS. Prior refs: discovery=${discovery?.ref ?? "none"}, I2=${i2?.ref ?? "none"}, I3=${i3?.ref ?? "none"}, I4=${i4?.ref ?? "none"}, UI=${ui?.ref ?? "none"}. Summaries: ${JSON.stringify([i2c,i3c,i4c,uic]).slice(0,8000)}. Read plan.md, 01- (focus I5), 02- (focus S3). Inspect current app on disk, run the project's real checks: discover build/test/lint commands from package.json/Makefile/CI and run them. Execute S3 final security pass and I5 finishing tasks per prompt files. Fix issues you find (real edits), re-run checks. Also determine EXACT credential activation steps left for the human (env vars, API keys, accounts) — list them step-by-step from .env.example / config / README evidence; do not invent credentials. Determine exact start command + URL for the web app. Evidence: every command run with pass/fail, files changed in this phase, start command, credential steps. complete=true only if S3+I5 done and app builds/runs or blockers are explicitly listed as unresolved.`,
+    schema: evidenceSchema,
+    label: "S3-I5-verify"
+  });
+  const fc = compact(final, "S3-I5");
+
+  host.phase("Synthesis");
+  const all = [d, i2c, i3c, i4c, uic, fc];
+  const unresolved = all.flatMap(r=>r.unresolved);
+  const evidence = all.flatMap(r=>r.evidence.map(v=>({source:r.scope, ref:r.ref, value:v})));
+  const notes = all.flatMap(r=>r.notes);
+  const synthesis = await host.agent({
+    input: `Synthesize the final OpenOS delivery report from ONLY this compact evidence. Do not invent results. Structure: (1) Status first (complete/partial + unresolved), (2) What was delivered per phase I1,S1,I2,I3,I4,S2,U1,U2,U3,S3,I5, (3) Implemented web app: how to start (exact command + URL) if evidenced, (4) Evidence from checks actually run (commands + outcomes, attributed), (5) Exact credential activation steps left for the human, (6) Files changed, (7) Gaps/risks. Preserve every unresolved item. Compact evidence: ${JSON.stringify({evidence, unresolved, notes}).slice(0,20000)}`,
+    schema: evidenceSchema,
+    label: "synthesis"
+  });
+  const sc = compact(synthesis, "synthesis");
+  const report = {
+    status: (unresolved.length===0 && sc.complete) ? "complete" : "partial",
+    unresolved: [...unresolved, ...sc.unresolved],
+    phases: all.map(r=>({scope:r.scope, ref:r.ref, complete:r.complete, evidence:r.evidence, unresolved:r.unresolved})),
+    synthesis: { ref: synthesis?.ref ?? null, text: synthesis?.text ?? null, data: synthesis?.data ?? null },
+    evidence,
+    notes: [...notes, ...sc.notes],
+    refs: all.map(r=>r.ref).filter(Boolean)
+  };
+  return { ...report, summary: JSON.stringify(report) };
+}

@@ -7,6 +7,8 @@ import { searchCatalog } from "@/lib/catalog";
 import { POST as pdfPOST } from "@/app/api/pdf/route";
 import { POST as genPOST } from "@/app/api/generate/route";
 import { POST as sandboxPOST } from "@/app/api/sandbox/route";
+import { createSession } from "@/lib/auth";
+let _tok = ""; async function authH() { if (!_tok) _tok = (await createSession()).token; return { Authorization: `Bearer ${_tok}` }; }
 
 describe("personalization engine", () => {
   it("turns an invoice prompt into an ordered merge→watermark→metadata pipeline", () => {
@@ -60,8 +62,9 @@ describe("catalog search by paid tool", () => {
 
 describe("POST /api/generate", () => {
   it("400s without repo, returns validated app with repo", async () => {
-    expect((await genPOST(new NextRequest("http://localhost/api/generate", { method: "POST", body: JSON.stringify({}), headers: { "Content-Type": "application/json" } }))).status).toBe(400);
-    const res = await genPOST(new NextRequest("http://localhost/api/generate", { method: "POST", body: JSON.stringify({ repo: "Hopding/pdf-lib", prompt: "merge and watermark" }), headers: { "Content-Type": "application/json" } }));
+    expect((await genPOST(new NextRequest("http://localhost/api/generate", { method: "POST", body: JSON.stringify({ repo: "x/y" }), headers: { "Content-Type": "application/json" } }))).status).toBe(401);
+    expect((await genPOST(new NextRequest("http://localhost/api/generate", { method: "POST", body: JSON.stringify({}), headers: { "Content-Type": "application/json", ...(await authH()) } }))).status).toBe(400);
+    const res = await genPOST(new NextRequest("http://localhost/api/generate", { method: "POST", body: JSON.stringify({ repo: "Hopding/pdf-lib", prompt: "merge and watermark" }), headers: { "Content-Type": "application/json", ...(await authH()) } }));
     expect(res.status).toBe(200); expect((await res.json()).app.operations).toEqual(["merge", "watermark"]);
   });
 });
@@ -71,12 +74,12 @@ describe("PDF pipeline execution", () => {
   it("merges then stamps metadata in one pass", async () => {
     const fd = new FormData(); fd.set("op", "pipeline"); fd.set("steps", JSON.stringify(["merge", "metadata"])); fd.set("title", "Invoices Q1");
     fd.append("files", await makePdf(2)); fd.append("files", await makePdf(1));
-    const res = await pdfPOST(new NextRequest("http://localhost/api/pdf", { method: "POST", body: fd }));
+    const res = await pdfPOST(new NextRequest("http://localhost/api/pdf", { method: "POST", body: fd, headers: await authH() }));
     expect(res.status).toBe(200); const out = await PDFDocument.load(await res.arrayBuffer());
     expect(out.getPageCount()).toBe(3); expect(out.getTitle()).toBe("Invoices Q1");
   });
   it("rejects unknown pipeline steps (fail closed)", async () => {
     const fd = new FormData(); fd.set("op", "pipeline"); fd.set("steps", JSON.stringify(["shell"])); fd.append("files", await makePdf(1));
-    expect((await pdfPOST(new NextRequest("http://localhost/api/pdf", { method: "POST", body: fd }))).status).toBe(400);
+    expect((await pdfPOST(new NextRequest("http://localhost/api/pdf", { method: "POST", body: fd, headers: await authH() }))).status).toBe(400);
   });
 });

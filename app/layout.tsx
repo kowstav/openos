@@ -1,6 +1,7 @@
 import "./globals.css";
 import Link from "next/link";
-export const metadata = { title: "OpenOS — Open-source, made usable", description: "Turn GitHub repos into apps you can actually use." };
+export const metadata = { title: "OpenOS — Open-source, made usable", description: "Turn GitHub repos into apps you can actually use.", manifest: "/manifest.webmanifest" };
+export const viewport = { themeColor: "#0b0b0c" };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (<html lang="en"><body>
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b0b0c]/90 backdrop-blur">
@@ -12,9 +13,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/studio/pdf">PDF Studio</Link>
           <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/studio/image">Photo Studio</Link>
           <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/studio/ocr">OCR</Link>
+          <Link className="rounded-md px-3 py-1.5 hover:bg-white/10 hover:text-white" href="/studio/audio">Transcribe</Link>
         </nav>
       </div>
     </header>
+    <script dangerouslySetInnerHTML={{ __html: "if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(){})}" }} />
     <main className="mx-auto max-w-6xl px-4 pb-20">{children}</main>
     <footer className="border-t border-white/10 py-6 text-center text-xs text-zinc-500">OpenOS runs only vetted libraries through trusted adapters. No arbitrary repo code is executed.</footer>
   </body></html>);

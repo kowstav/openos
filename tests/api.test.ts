@@ -7,9 +7,13 @@ import { BlueprintSchema } from "@/lib/schemas";
 import { POST as pdfPOST } from "@/app/api/pdf/route";
 import { GET as githubGET } from "@/app/api/github/route";
 import { POST as analyzePOST } from "@/app/api/analyze/route";
+import { createSession } from "@/lib/auth";
+// S3: /api/pdf and /api/analyze require a session. Seed one owner here.
+let sessionToken = "";
+async function authHeaders() { if (!sessionToken) sessionToken = (await createSession()).token; return { Authorization: `Bearer ${sessionToken}` }; }
 
 async function makePdf(pages = 1) { const d = await PDFDocument.create(); for (let i = 0; i < pages; i++) d.addPage([300, 300]); return new File([Buffer.from(await d.save())], "doc.pdf", { type: "application/pdf" }); }
-function pdfReq(fd: FormData) { return new NextRequest("http://localhost/api/pdf", { method: "POST", body: fd }); }
+async function pdfReq(fd: FormData) { return new NextRequest("http://localhost/api/pdf", { method: "POST", body: fd, headers: await authHeaders() }); }
 
 describe("parseGitHubUrl", () => {
   it("parses full URL, shorthand and .git", () => {
@@ -42,28 +46,28 @@ describe("BlueprintSchema", () => {
 describe("POST /api/pdf", () => {
   it("merges two PDFs into one with summed pages", async () => {
     const fd = new FormData(); fd.set("op", "merge"); fd.append("files", await makePdf(2)); fd.append("files", await makePdf(1));
-    const res = await pdfPOST(pdfReq(fd));
+    const res = await pdfPOST(await pdfReq(fd));
     expect(res.status).toBe(200); expect(res.headers.get("content-type")).toContain("application/pdf");
     const out = await PDFDocument.load(await res.arrayBuffer()); expect(out.getPageCount()).toBe(3);
   });
   it("rotates pages 90 degrees", async () => {
     const fd = new FormData(); fd.set("op", "rotate"); fd.append("files", await makePdf(1));
-    const out = await PDFDocument.load(await (await pdfPOST(pdfReq(fd))).arrayBuffer());
+    const out = await PDFDocument.load(await (await pdfPOST(await pdfReq(fd))).arrayBuffer());
     expect(out.getPage(0).getRotation().angle).toBe(90);
   });
   it("splits to exactly one page and stamps metadata title", async () => {
     const fd = new FormData(); fd.set("op", "split"); fd.set("page", "2"); fd.append("files", await makePdf(3));
-    const out = await PDFDocument.load(await (await pdfPOST(pdfReq(fd))).arrayBuffer()); expect(out.getPageCount()).toBe(1);
+    const out = await PDFDocument.load(await (await pdfPOST(await pdfReq(fd))).arrayBuffer()); expect(out.getPageCount()).toBe(1);
     const fd2 = new FormData(); fd2.set("op", "metadata"); fd2.set("title", "Report"); fd2.append("files", await makePdf(1));
-    const out2 = await PDFDocument.load(await (await pdfPOST(pdfReq(fd2))).arrayBuffer()); expect(out2.getTitle()).toBe("Report");
+    const out2 = await PDFDocument.load(await (await pdfPOST(await pdfReq(fd2))).arrayBuffer()); expect(out2.getTitle()).toBe("Report");
   });
   it("rejects missing files (400), non-PDF (415) and corrupt PDF (422)", async () => {
     const empty = new FormData(); empty.set("op", "merge");
-    expect((await pdfPOST(pdfReq(empty))).status).toBe(400);
+    expect((await pdfPOST(await pdfReq(empty))).status).toBe(400);
     const txt = new FormData(); txt.append("files", new File(["hi"], "a.txt", { type: "text/plain" }));
-    expect((await pdfPOST(pdfReq(txt))).status).toBe(415);
+    expect((await pdfPOST(await pdfReq(txt))).status).toBe(415);
     const bad = new FormData(); bad.append("files", new File(["not-a-pdf"], "a.pdf", { type: "application/pdf" }));
-    expect((await pdfPOST(pdfReq(bad))).status).toBe(422);
+    expect((await pdfPOST(await pdfReq(bad))).status).toBe(422);
   });
 });
 
@@ -74,7 +78,7 @@ describe("GET /api/github", () => {
     expect((await githubGET(new NextRequest("http://localhost/api/github?url=not-a-url"))).status).toBe(400);
   });
   it("returns live-shaped repo data (fetch mocked at network boundary)", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (u: string) => u.includes("/languages") ? { ok: true, json: async () => ({ TypeScript: 1 }) } : u.includes("/readme") ? { ok: true, text: async () => "# Hi" } : { ok: true, json: async () => ({ full_name: "Hopding/pdf-lib", description: "PDFs", stargazers_count: 10, forks_count: 2, language: "TypeScript", license: { spdx_id: "MIT" }, default_branch: "master", pushed_at: "2024-01-01", html_url: "https://github.com/Hopding/pdf-lib", topics: [], updated_at: "", open_issues_count: 0 }) }));
+    vi.stubGlobal("fetch", vi.fn(async (u: string) => u.includes("/commits/") ? { ok: true, json: async () => ({ sha: "a".repeat(40) }) } : u.includes("/git/trees/") ? { ok: true, json: async () => ({ truncated: false, tree: [] }) } : u.includes("/languages") ? { ok: true, json: async () => ({ TypeScript: 1 }) } : u.includes("/readme") ? { ok: true, text: async () => "# Hi" } : { ok: true, json: async () => ({ full_name: "Hopding/pdf-lib", description: "PDFs", stargazers_count: 10, forks_count: 2, language: "TypeScript", license: { spdx_id: "MIT" }, default_branch: "master", pushed_at: "2024-01-01", html_url: "https://github.com/Hopding/pdf-lib", topics: [], updated_at: "", open_issues_count: 0 }) }));
     const res = await githubGET(new NextRequest("http://localhost/api/github?url=https://github.com/Hopding/pdf-lib"));
     expect(res.status).toBe(200); const j = await res.json(); expect(j.repo.fullName).toBe("Hopding/pdf-lib"); expect(j.repo.license).toBe("MIT");
   });
@@ -82,13 +86,14 @@ describe("GET /api/github", () => {
 
 describe("POST /api/analyze", () => {
   afterEach(() => { vi.unstubAllGlobals(); delete process.env.MODEL_API_KEY; delete process.env.META_API_KEY; });
-  it("400s on invalid URL", async () => {
-    const res = await analyzePOST(new NextRequest("http://localhost/api/analyze", { method: "POST", body: JSON.stringify({ url: "nope" }), headers: { "Content-Type": "application/json" } }));
+  it("401s anonymously and 400s on invalid URL with a session", async () => {
+    expect((await analyzePOST(new NextRequest("http://localhost/api/analyze", { method: "POST", body: JSON.stringify({ url: "nope" }), headers: { "Content-Type": "application/json" } }))).status).toBe(401);
+    const res = await analyzePOST(new NextRequest("http://localhost/api/analyze", { method: "POST", body: JSON.stringify({ url: "nope" }), headers: { "Content-Type": "application/json", ...(await authHeaders()) } }));
     expect(res.status).toBe(400);
   });
   it("returns Zod-valid blueprint via deterministic fallback when no model key", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (u: string) => u.includes("/languages") ? { ok: true, json: async () => ({ TypeScript: 1 }) } : u.includes("/readme") ? { ok: true, text: async () => "# pdf-lib\n- Create PDFs" } : { ok: true, json: async () => ({ full_name: "Hopding/pdf-lib", description: "PDFs", stargazers_count: 1, forks_count: 0, language: "TypeScript", license: { spdx_id: "MIT" }, default_branch: "master", pushed_at: "x", html_url: "", topics: [], updated_at: "", open_issues_count: 0 }) }));
-    const res = await analyzePOST(new NextRequest("http://localhost/api/analyze", { method: "POST", body: JSON.stringify({ url: "https://github.com/Hopding/pdf-lib" }), headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", vi.fn(async (u: string) => u.includes("/commits/") ? { ok: true, json: async () => ({ sha: "a".repeat(40) }) } : u.includes("/git/trees/") ? { ok: true, json: async () => ({ truncated: false, tree: [] }) } : u.includes("/languages") ? { ok: true, json: async () => ({ TypeScript: 1 }) } : u.includes("/readme") ? { ok: true, text: async () => "# pdf-lib\n- Create PDFs" } : { ok: true, json: async () => ({ full_name: "Hopding/pdf-lib", description: "PDFs", stargazers_count: 1, forks_count: 0, language: "TypeScript", license: { spdx_id: "MIT" }, default_branch: "master", pushed_at: "x", html_url: "", topics: [], updated_at: "", open_issues_count: 0 }) }));
+    const res = await analyzePOST(new NextRequest("http://localhost/api/analyze", { method: "POST", body: JSON.stringify({ url: "https://github.com/Hopding/pdf-lib" }), headers: { "Content-Type": "application/json", ...(await authHeaders()) } }));
     expect(res.status).toBe(200); const j = await res.json();
     expect(j.source).toBe("deterministic-fallback"); expect(BlueprintSchema.parse(j.blueprint).supported).toBe(true);
   });
@@ -97,7 +102,7 @@ describe("POST /api/analyze", () => {
 describe("POST /api/pdf unknown operation", () => {
   it("fails closed with 400 instead of silently applying another operation", async () => {
     const fd = new FormData(); fd.set("op", "bogus-op"); fd.append("files", await makePdf(1));
-    expect((await pdfPOST(pdfReq(fd))).status).toBe(400);
+    expect((await pdfPOST(await pdfReq(fd))).status).toBe(400);
   });
 });
 

@@ -1,0 +1,24 @@
+# Local production-shaped stack (I4): control plane + durable data volume.
+# The sandbox provider, model and database stay external credentials; with
+# none set, untrusted execution refuses (fail closed) and health reports it.
+services:
+  web:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    ports: ["3000:3000"]
+    environment:
+      - OPENOS_DATA_DIR=/data
+      # Deployment config (not secrets): exact provider selection.
+      - SANDBOX_PROVIDER=${SANDBOX_PROVIDER:-}
+      # Secrets: inject via host env / secret store, never commit values.
+      - MODEL_API_KEY=${MODEL_API_KEY:-}
+      - META_API_KEY=${META_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - MODAL_TOKEN_ID=${MODAL_TOKEN_ID:-}
+      - MODAL_TOKEN_SECRET=${MODAL_TOKEN_SECRET:-}
+    volumes: ["openos-data:/data"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+volumes:
+  openos-data:

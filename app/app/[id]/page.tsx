@@ -3,10 +3,11 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import AppRenderer from "@/components/AppRenderer";
+import { ensureSession } from "@/components/session";
 type App = React.ComponentProps<typeof AppRenderer>["app"] & { createdAt: number };
 export default function Page() {
   const { id } = useParams<{ id: string }>(); const [app, setApp] = useState<App | null>(null); const [err, setErr] = useState(""); const [art, setArt] = useState<{ plan: { sourceSha: string; strategy: string; skills: string[] }; build: { installCommand: string; runtime: string }; security: { isolation: string; deniedCapabilities: string[] }; verification: { passed: boolean; sampleInput: string; sampleOutputExcerpt: string }; version: { version: number; sourceSha: string } } | null>(null);
-  useEffect(() => { fetch(`/api/apps/${id}`).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setApp(j.app); setArt(j.artifacts); }).catch((e) => setErr(String(e.message))); }, [id]);
+  useEffect(() => { ensureSession().then(() => fetch(`/api/apps/${id}`)).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setApp(j.app); setArt(j.artifacts); }).catch((e) => setErr(String(e.message))); }, [id]);
   if (err) return <p role="alert" className="py-16 text-red-300">{err} <Link className="underline" href="/workspace">← My Apps</Link></p>;
   if (!app) return <p className="py-16 text-zinc-400">Loading your app…</p>;
   return (<div className="py-10"><Link href="/workspace" className="text-sm text-zinc-400 hover:text-white">← My Apps</Link>

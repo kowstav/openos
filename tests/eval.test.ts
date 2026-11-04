@@ -4,7 +4,11 @@ import { runJsOperation, runPythonOperation, runJsCli } from "@/lib/runner";
 // showcase configuration. They convert through the same classify → spec →
 // isolated install → execute path as any user submission. Network required;
 // failures here are real signal, not flaky decoration.
-describe("novel repository conversion (unseen repos, real execution)", () => {
+// QUARANTINED (I1/S1): these cases install + execute packages on the HOST.
+// They run only with OPENOS_RUN_HOST_EVAL=1 in an explicitly trusted,
+// disposable environment — never in the default suite or CI.
+const hostEval = process.env.OPENOS_RUN_HOST_EVAL === "1" ? describe : describe.skip;
+hostEval("novel repository conversion (unseen repos, real execution)", () => {
   it("converts markedjs/marked (JS): Markdown → HTML matches the pinned fixture", async () => {
     const out = await runJsOperation({ packageName: "marked", module: "marked", exportName: "marked.parse" }, "# Hello OpenOS\n\nTurn **code** into apps.\n");
     expect(out).toContain("<h1>Hello OpenOS</h1>"); expect(out).toContain("<strong>code</strong>");

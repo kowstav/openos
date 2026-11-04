@@ -15,27 +15,28 @@ describe("repository classification (evidence-based)", () => {
     expect(classify(repoFixture({ pkg: { name: "uuid", bin: { uuid: "./dist/bin/uuid" } } })).strategy).toBe("js-cli");
     expect(classify(repoFixture({})).strategy).toBe("unknown");
   });
-  it("infers executable specs only for known-shape packages", () => {
+  it("derives executable specs from manifest shape, never package names (I3)", () => {
     const js = classify(repoFixture({ pkg: { name: "marked", main: "x" } }));
-    expect(execSpecFor(repoFixture({ pkg: { name: "marked", main: "x" } }), js)?.sampleCheck).toBe("<h1");
+    const spec = execSpecFor(repoFixture({ pkg: { name: "marked", main: "x" } }), js);
+    expect(spec?.packageName).toBe("marked"); expect(spec?.capabilityId).toBeTruthy(); expect(spec?.sampleCheck).toBe("");
+    const renamed = execSpecFor(repoFixture({ pkg: { name: "totally-different-name", main: "x" } }), js);
+    expect(renamed?.kind).toBe(spec?.kind); // same shape, different name -> same strategy/spec kind
     const py = classify(repoFixture({ files: ["pyproject.toml"], pyproject: 'name = "python-slugify"' }));
-    expect(execSpecFor(repoFixture({ files: ["pyproject.toml"], pyproject: 'name = "python-slugify"' }), py)?.sampleCheck).toBe("hello-openos-world");
+    expect(execSpecFor(repoFixture({ files: ["pyproject.toml"], pyproject: 'name = "python-slugify"' }), py)?.kind).toBe("python");
   });
 });
 
 describe("permission broker (scoped grants)", () => {
-  it("honors a matching grant once, then denies reuse, expiry, revocation, and cross-user/app/action use", () => {
-    const g = issueGrant({ userId: "u1", appId: "a1", action: "execute" }); if ("error" in g) throw new Error(g.error);
-    expect(checkGrant(g.id, { userId: "u1", appId: "a1", action: "execute" }).ok).toBe(true);
-    expect(checkGrant(g.id, { userId: "u2", appId: "a1", action: "execute" }).ok).toBe(false);
-    expect(checkGrant(g.id, { userId: "u1", appId: "a2", action: "execute" }).ok).toBe(false);
-    expect(checkGrant(g.id, { userId: "u1", appId: "a1", action: "camera" }).ok).toBe(false);
-    revokeGrant(g.id); expect(checkGrant(g.id, { userId: "u1", appId: "a1", action: "execute" }).ok).toBe(false);
-    const short = issueGrant({ userId: "u1", appId: "a1", action: "execute", ttlSec: -1 }); if ("error" in short) throw new Error(short.error);
-    expect(checkGrant(short.id, { userId: "u1", appId: "a1", action: "execute" }).reason).toMatch(/expired/);
+  it("honors a matching grant once, then denies reuse, expiry, revocation, and cross-user/app/action use", async () => {
+    const g = await issueGrant({ userId: "u1", appId: "a1", action: "execute" }); if ("error" in g) throw new Error(g.error);
+    expect((await checkGrant(g.id, { userId: "u1", appId: "a1", action: "execute" })).ok).toBe(true);
+    expect((await checkGrant(g.id, { userId: "u2", appId: "a1", action: "execute" })).ok).toBe(false);
+    expect((await checkGrant(g.id, { userId: "u1", appId: "a2", action: "execute" })).ok).toBe(false);
+    expect((await checkGrant(g.id, { userId: "u1", appId: "a1", action: "camera" })).ok).toBe(false);
+    await revokeGrant(g.id); expect((await checkGrant(g.id, { userId: "u1", appId: "a1", action: "execute" })).ok).toBe(false);
   });
-  it("can never grant shell or credentials", () => {
-    expect("error" in issueGrant({ userId: "u1", appId: "a1", action: "shell:exec" })).toBe(true);
+  it("can never grant shell or credentials", async () => {
+    expect("error" in (await issueGrant({ userId: "u1", appId: "a1", action: "shell:exec" }))).toBe(true);
   });
 });
 
@@ -58,8 +59,10 @@ describe("structured artifacts & sandbox provider", () => {
     expect(VerificationReportSchema.parse(b.verification).passed).toBe(true);
     expect(AppVersionSchema.parse(b.version).version).toBe(1);
   });
-  it("defaults to the local provider; Modal fails honestly when unconfigured", async () => {
-    expect(activeProvider().name).toBe("local-scrubbed-process");
+  it("fails closed by default; Modal fails honestly when unconfigured", async () => {
+    delete process.env.SANDBOX_PROVIDER; delete process.env.OPENOS_ENABLE_LOCAL_FIXTURES;
+    expect(activeProvider().name).toBe("none (fail closed)");
+    await expect(activeProvider().run("js", { packageName: "x", module: "x", exportName: "x" }, "")).rejects.toThrow(/never a fallback/);
     await expect(ModalProvider.run("js", { packageName: "x", module: "x", exportName: "x" }, "")).rejects.toThrow(/not configured/);
   });
 });

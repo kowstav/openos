@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchRepo, parseGitHubUrl } from "@/lib/github";
 import { analyzeWithModel } from "@/lib/model";
+import { requireUser } from "@/lib/auth";
+import { checkQuota } from "@/lib/ratelimit";
+// Analysis fans out to GitHub + the model: it needs a session and a quota
+// (S3 sibling fix). Discovery listing stays public via /api/catalog.
 export async function POST(req: NextRequest) {
+  const u = await requireUser(req);
+  if (!u) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  const quota = checkQuota("analyze", u.userId);
+  if (!quota.ok) return NextResponse.json({ error: quota.reason }, { status: 429 });
   const { url } = await req.json().catch(() => ({}));
   const p = url ? parseGitHubUrl(url) : null;
   if (!p) return NextResponse.json({ error: "Invalid GitHub URL" }, { status: 400 });

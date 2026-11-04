@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchRepo, parseGitHubUrl, CURATED } from "@/lib/github";
+import { checkQuota, clientSubject } from "@/lib/ratelimit";
+// Intentionally public discovery (S1), but quota-bounded per client so a
+// single caller cannot burn the shared GITHUB_TOKEN budget (S3).
 export async function GET(req: NextRequest) {
+  const quota = checkQuota("github", clientSubject(req));
+  if (!quota.ok) return NextResponse.json({ error: quota.reason }, { status: 429 });
   const url = req.nextUrl.searchParams.get("url");
   const list = req.nextUrl.searchParams.get("list");
   try {

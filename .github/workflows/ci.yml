@@ -1,0 +1,49 @@
+name: CI
+# Release gates (S3): every push/PR must pass lint, typecheck, unit/integration
+# tests and the production build. Host-execution eval stays quarantined
+# (OPENOS_RUN_HOST_EVAL is never set here). Live sandbox proof is a separate
+# credential-gated job that skips without secrets instead of faking a pass.
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Worker syntax (no Modal credentials needed)
+        run: python3 -m py_compile workers/modal_runner.py
+  live-smoke:
+    # Disposable, credential-gated: without secrets the script prints SKIP
+    # and exits 0. With secrets it must prove isolation or fail the job.
+    runs-on: ubuntu-latest
+    needs: verify
+    if: ${{ vars.OPENOS_LIVE_SMOKE == '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Start server and run live smoke
+        env:
+          SANDBOX_PROVIDER: ${{ secrets.SANDBOX_PROVIDER }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+        run: |
+          npm run start -- -p 3000 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/api/health && break || sleep 2; done
+          OPENOS_URL=http://localhost:3000 node scripts/live-smoke.mjs
